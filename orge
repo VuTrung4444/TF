@@ -111,7 +111,7 @@ local function StartAutoWeaponR()
                 :WaitForChild("ToolActivated")
                 :InvokeServer(unpack(args))
 
-            task.wait(1)
+            task.wait(0.5)
         end
     end)
 end
@@ -944,7 +944,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 
 
 local WalkSpeed = 40
-local JumpPower = 30
+local JumpPower = 50
 
 
 local function updateHumanoid(char)
@@ -991,7 +991,7 @@ SpeedAndJump:AddSlider({
 SpeedAndJump:AddSlider({
     Name = "JumpPower",
     Value = JumpPower,
-    Min = 10,
+    Min = 50,
     Max = 500,
     Flag = "JumpPower",
     Textbox = true,
