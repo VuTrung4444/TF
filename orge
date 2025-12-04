@@ -8,14 +8,6 @@ local IsOpen = Subs.Wait
 local placeId = game.PlaceId
 
 
-local InnateSpinEnabled = false
-local slot1Enabled = false
-local slot2Enabled = false
-local huntLegendary = false  
-local huntSg = false
-
-
-
     local Window = Library:CreateWindow({
         Name = "HackerLor",
         Themeable = {
@@ -30,8 +22,8 @@ local huntSg = false
 	local MainTab = Window:CreateTab({Name = "Main"})
 	local MainSection = MainTab:CreateSection({Name = "Farming"})
 	local Settings = MainTab:CreateSection({Name = "Settings"})
-	local KA = MainTab:CreateSection({Name = "Kill Aura", Side = "Left"})
-	local AutoMission = MainTab:CreateSection({Name = "Auto", Side = "Right"})
+	local Farm = MainTab:CreateSection({Name = "Farm", Side = "Left"})
+	local Auto = MainTab:CreateSection({Name = "Auto", Side = "Right"})
 	local DailySection = MainTab:CreateSection({Name = "Spin", Side = "Left"})
 	local Teleports = MainTab:CreateSection({Name = "Teleports", Side = "Right"})
 	local AuraTab = MainTab:CreateSection({Name = "AuraSkills", Side = "Left"})
@@ -45,6 +37,219 @@ local huntSg = false
 	local SpeedAndJump = MiscTab:CreateSection({Name = "Speed&Jump", Side = "Right"})
 
 
+
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+getgenv().AutoPickaxe = false 
+
+
+local function StartAutoPickaxe()
+    spawn(function()
+        while getgenv().AutoPickaxe do
+            local args = {"Pickaxe"}
+
+            ReplicatedStorage
+                :WaitForChild("Shared")
+                :WaitForChild("Packages")
+                :WaitForChild("Knit")
+                :WaitForChild("Services")
+                :WaitForChild("ToolService")
+                :WaitForChild("RF")
+                :WaitForChild("ToolActivated")
+                :InvokeServer(unpack(args))
+
+            task.wait(0.5)
+        end
+    end)
+end
+
+
+Auto:AddToggle({
+    Name = "Auto Pickaxe",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoPickaxe = state
+        if state then
+            StartAutoPickaxe()
+        end
+    end
+})
+
+
+UserInputService.InputBegan:Connect(function(input, typing)
+    if typing then return end
+    if input.KeyCode == Enum.KeyCode.G then
+        getgenv().AutoPickaxe = not getgenv().AutoPickaxe
+
+        if getgenv().AutoPickaxe then
+            StartAutoPickaxe()
+        end
+    end
+end)
+
+
+
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+getgenv().AutoWeaponR = false
+
+
+local function StartAutoWeaponR()
+    task.spawn(function()
+        while getgenv().AutoWeaponR do
+            local args = {"Weapon", true}
+
+            ReplicatedStorage
+                :WaitForChild("Shared")
+                :WaitForChild("Packages")
+                :WaitForChild("Knit")
+                :WaitForChild("Services")
+                :WaitForChild("ToolService")
+                :WaitForChild("RF")
+                :WaitForChild("ToolActivated")
+                :InvokeServer(unpack(args))
+
+            task.wait(1)
+        end
+    end)
+end
+
+
+Auto:AddToggle({
+    Name = "Auto WeaponR",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoWeaponR = state
+        if state then
+            StartAutoWeaponR()
+        end
+    end
+})
+
+
+UserInputService.InputBegan:Connect(function(input, typing)
+    if typing then return end
+    if input.KeyCode == Enum.KeyCode.H then
+        getgenv().AutoWeaponR = not getgenv().AutoWeaponR
+
+        if getgenv().AutoWeaponR then
+            StartAutoWeaponR()
+        end
+    end
+end)
+
+
+
+
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+getgenv().AutoWeapon02 = false
+
+
+local function StartAutoWeapon02()
+    task.spawn(function()
+        while getgenv().AutoWeapon02 do
+            local args = {"Weapon"}
+
+            ReplicatedStorage
+                :WaitForChild("Shared")
+                :WaitForChild("Packages")
+                :WaitForChild("Knit")
+                :WaitForChild("Services")
+                :WaitForChild("ToolService")
+                :WaitForChild("RF")
+                :WaitForChild("ToolActivated")
+                :InvokeServer(unpack(args))
+
+            task.wait(0.2)
+        end
+    end)
+end
+
+
+Auto:AddToggle({
+    Name = "Auto Weapon 0.2s",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoWeapon02 = state
+        if state then
+            StartAutoWeapon02()
+        end
+    end
+})
+
+
+UserInputService.InputBegan:Connect(function(input, typing)
+    if typing then return end
+    if input.KeyCode == Enum.KeyCode.J then
+        getgenv().AutoWeapon02 = not getgenv().AutoWeapon02
+        if getgenv().AutoWeapon02 then
+            StartAutoWeapon02()
+        end
+    end
+end)
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+
+local function ParseInput(str)
+    local item = str:match("%a+")      -- lấy chữ
+    local amount = tonumber(str:match("%d+")) -- lấy số
+    return item, amount
+end
+
+
+Farm:AddTextbox({
+    Name = "Item cần bán (VD: Copper1)",
+    Default = "",
+    TextDisappear = false,
+    Callback = function(v)
+        getgenv().SellInput = v
+    end
+})
+
+
+Farm:AddButton({
+    Name = "Bán Item",
+    Callback = function()
+        local text = getgenv().SellInput
+        if not text or text == "" then
+            warn("Chưa nhập tên item!")
+            return
+        end
+
+        local item, amount = ParseInput(text)
+        if not item or not amount then
+            warn("Sai định dạng! Nhập như: Copper1, Iron20")
+            return
+        end
+
+        local args = {
+            "SellConfirm",
+            {
+                Basket = {
+                    [item] = amount
+                }
+            }
+        }
+
+        ReplicatedStorage
+            :WaitForChild("Shared")
+            :WaitForChild("Packages")
+            :WaitForChild("Knit")
+            :WaitForChild("Services")
+            :WaitForChild("DialogueService")
+            :WaitForChild("RF")
+            :WaitForChild("RunCommand")
+            :InvokeServer(unpack(args))
+
+        print("Đã bán:", item, amount)
+    end
+})
 
 
 local Players = game:GetService("Players")
@@ -78,37 +283,52 @@ end
 
 local function createESP(player)
     if player == LocalPlayer then return end
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-        return
-    end
 
-
-    if player.Character:FindFirstChild("ESP") then
-        player.Character.ESP:Destroy()
-    end
-
-    local root = player.Character.HumanoidRootPart
-    local billboard, textLabel = createBillboard(root, player.Name, player.Character)
-
-    task.spawn(function()
-        while getgenv().ESPenabled
-        and player.Character
-        and player.Character:FindFirstChild("HumanoidRootPart") do
-
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local distance = math.floor((root.Position - hrp.Position).Magnitude)
-                textLabel.Text = player.Name .. " | " .. distance .. " studs"
-            end
-            
-            task.wait(1)
+    local function attach()
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return
         end
 
-        if billboard then billboard:Destroy() end
+
+        if player.Character:FindFirstChild("ESP") then
+            player.Character.ESP:Destroy()
+        end
+
+        local root = player.Character.HumanoidRootPart
+        local billboard, label = createBillboard(root, player.Name, player.Character)
+
+        task.spawn(function()
+            while getgenv().ESPenabled 
+                and player.Character 
+                and player.Character:FindFirstChild("HumanoidRootPart") 
+                and billboard.Parent do
+
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local distance = math.floor((root.Position - hrp.Position).Magnitude)
+                    label.Text = player.Name .. " | " .. distance .. " studs"
+                end
+
+                task.wait(1)
+            end
+
+            if billboard then billboard:Destroy() end
+        end)
+    end
+
+
+    attach()
+
+
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if getgenv().ESPenabled then
+            attach()
+        end
     end)
 end
 
-local function updateAllPlayersESP()
+local function updateAllPlayers()
     for _, plr in ipairs(Players:GetPlayers()) do
         createESP(plr)
     end
@@ -117,23 +337,9 @@ end
 
 Players.PlayerAdded:Connect(function(plr)
     if getgenv().ESPenabled then
-        plr.CharacterAdded:Connect(function()
-            task.wait(0.5)
-            createESP(plr)
-        end)
+        createESP(plr)
     end
 end)
-
-
-Players.PlayerAdded:Connect(function(plr)
-    plr.CharacterAdded:Connect(function()
-        if plr ~= LocalPlayer and getgenv().ESPenabled then
-            task.wait(0.5)
-            createESP(plr)
-        end
-    end)
-end)
-
 
 Ect:AddToggle({
     Name = "ESP",
@@ -142,7 +348,7 @@ Ect:AddToggle({
         getgenv().ESPenabled = state
 
         if state then
-            updateAllPlayersESP()
+            updateAllPlayers()
         else
 
             for _, plr in ipairs(Players:GetPlayers()) do
@@ -153,7 +359,6 @@ Ect:AddToggle({
         end
     end
 })
-
 
 
 local Noclip = nil
@@ -702,8 +907,6 @@ Ect:AddButton({
 
 
 
-
-
 MiscSection:AddButton({
 	Name = "No Fog",
 	Flag = "NF",
@@ -720,6 +923,18 @@ MiscSection:AddButton({
 })
 
 
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local PLACE_ID = game.PlaceId
+
+MiscSection:AddButton({
+    Name = "Hop Server",
+    Callback = function()
+        TeleportService:Teleport(PLACE_ID, Players.LocalPlayer)
+    end
+})
+
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -728,8 +943,8 @@ local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
 
-local WalkSpeed = 50
-local JumpPower = 70
+local WalkSpeed = 40
+local JumpPower = 30
 
 
 local function updateHumanoid(char)
@@ -776,7 +991,7 @@ SpeedAndJump:AddSlider({
 SpeedAndJump:AddSlider({
     Name = "JumpPower",
     Value = JumpPower,
-    Min = 50,
+    Min = 10,
     Max = 500,
     Flag = "JumpPower",
     Textbox = true,
