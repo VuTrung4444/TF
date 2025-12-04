@@ -197,10 +197,193 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 
 local function ParseInput(str)
-    local item = str:match("%a+")      -- lấy chữ
-    local amount = tonumber(str:match("%d+")) -- lấy số
+    local item = str:match("%a+")
+    local amount = tonumber(str:match("%d+")) 
     return item, amount
 end
+
+
+--// LocalScript: Auto Tween Safe Mob Logic (Hover Version)
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+local livingFolder = workspace:WaitForChild("Living")
+
+getgenv().AutoSafeMob = false
+
+local hrp = nil
+
+local function UpdateHRP(char)
+	task.wait(1)
+	hrp = char:WaitForChild("HumanoidRootPart")
+end
+
+if LocalPlayer.Character then
+	UpdateHRP(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(UpdateHRP)
+
+----------------------------------------------------------
+-- HOVER SYSTEM (giống script AutoBoss của bạn)
+----------------------------------------------------------
+
+local function EnableHover(root)
+	if not root:FindFirstChild("BodyPosition") then
+		local bp = Instance.new("BodyPosition")
+		bp.MaxForce = Vector3.new(9e9,9e9,9e9)
+		bp.P = 5e4
+		bp.D = 1000
+		bp.Name = "BodyPosition"
+		bp.Parent = root
+	end
+	if not root:FindFirstChild("BodyGyro") then
+		local bg = Instance.new("BodyGyro")
+		bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
+		bg.P = 5e4
+		bg.D = 1000
+		bg.CFrame = CFrame.new(root.Position)
+		bg.Name = "BodyGyro"
+		bg.Parent = root
+	end
+end
+
+local function DisableHover(root)
+	local bp = root:FindFirstChild("BodyPosition")
+	if bp then bp:Destroy() end
+	local bg = root:FindFirstChild("BodyGyro")
+	if bg then bg:Destroy() end
+end
+
+----------------------------------------------------------
+-- FUNCTION: Lấy mob hợp lệ
+----------------------------------------------------------
+local function getAllMobs()
+	local mobs = {}
+	for _, mob in pairs(livingFolder:GetChildren()) do
+		if mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") then
+			if mob.Humanoid.Health > 0 then
+				table.insert(mobs, mob)
+			end
+		end
+	end
+	return mobs
+end
+
+
+local function getClosestPlayer()
+	local myChar = LocalPlayer.Character
+	if not myChar then return nil, math.huge end
+
+	local myPos = myChar:WaitForChild("HumanoidRootPart").Position
+	local nearest, dist = nil, math.huge
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer
+			and plr.Character
+			and plr.Character:FindFirstChild("HumanoidRootPart")
+		then
+			local d = (plr.Character.HumanoidRootPart.Position - myPos).Magnitude
+			if d < dist then
+				dist = d
+				nearest = plr
+			end
+		end
+	end
+
+	return nearest, dist
+end
+
+
+local function findSafeMob()
+	local mobs = getAllMobs()
+	local nearestPlayer, distPlayer = getClosestPlayer()
+
+
+	if not nearestPlayer or distPlayer > 50 then
+		return nil
+	end
+
+	local safeList = {}
+	for _, mob in ipairs(mobs) do
+		local mobPos = mob.HumanoidRootPart.Position
+		local plPos = nearestPlayer.Character.HumanoidRootPart.Position
+
+		if (mobPos - plPos).Magnitude >= 500 then
+			table.insert(safeList, mob)
+		end
+	end
+
+	if #safeList > 0 then
+		return safeList[math.random(1, #safeList)]
+	end
+
+	return nil
+end
+
+
+task.spawn(function()
+	while task.wait(0.3) do
+		if not getgenv().AutoSafeMob then
+			if hrp then DisableHover(hrp) end
+			continue
+		end
+
+		if not hrp then continue end
+
+		local mobs = getAllMobs()
+		if #mobs == 0 then continue end
+
+
+		local myPos = hrp.Position
+		local closestMob
+		local minDist = math.huge
+
+		for _, mob in ipairs(mobs) do
+			local d = (mob.HumanoidRootPart.Position - myPos).Magnitude
+			if d < minDist then
+				minDist = d
+				closestMob = mob
+			end
+		end
+
+		if not closestMob then continue end
+
+
+		EnableHover(hrp)
+		local bp = hrp:FindFirstChild("BodyPosition")
+
+
+		local safeMob = findSafeMob()
+
+
+		if safeMob then
+			if bp then
+				bp.Position = safeMob.HumanoidRootPart.Position + Vector3.new(0, 10, 0)
+			end
+		else
+
+			if bp then
+				bp.Position = closestMob.HumanoidRootPart.Position + Vector3.new(0, 50, 0)
+			end
+		end
+	end
+end)
+
+
+
+Ect:AddToggle({
+	Name = "Auto Safe Mob",
+	Default = false,
+	Callback = function(v)
+		getgenv().AutoSafeMob = v
+		if not v and hrp then
+			DisableHover(hrp)
+		end
+	end
+})
+
 
 
 Farm:AddTextbox({
@@ -991,7 +1174,7 @@ SpeedAndJump:AddSlider({
 SpeedAndJump:AddSlider({
     Name = "JumpPower",
     Value = JumpPower,
-    Min = 50,
+    Min = 10,
     Max = 500,
     Flag = "JumpPower",
     Textbox = true,
