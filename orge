@@ -728,8 +728,8 @@ local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
 
-local WalkSpeed = 150
-local JumpPower = 50
+local WalkSpeed = 50
+local JumpPower = 70
 
 
 local function updateHumanoid(char)
