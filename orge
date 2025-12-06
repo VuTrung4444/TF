@@ -195,197 +195,32 @@ end)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local function trim(s)
+    return s:match("^%s*(.-)%s*$")
+end
 
 local function ParseInput(str)
-    local item = str:match("%a+")
-    local amount = tonumber(str:match("%d+")) 
-    return item, amount
+    if type(str) ~= "string" then return nil, nil end
+
+    -- Lấy chuỗi số ở cuối (ví dụ "12" trong "Sand Stone12" hoặc "Sand Stone 12")
+    local amountStr = str:match("(%d+)%s*$")
+    if not amountStr then
+        return nil, nil
+    end
+
+    local amount = tonumber(amountStr)
+    -- Phần item là phần trước số, loại bỏ số ở cuối
+    local itemPart = str:sub(1, #str - #amountStr)
+    itemPart = trim(itemPart)
+
+    if itemPart == "" then
+        return nil, nil
+    end
+
+    return itemPart, amount
 end
 
-
---// LocalScript: Auto Tween Safe Mob Logic (Hover Version)
-
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local LocalPlayer = Players.LocalPlayer
-
-local livingFolder = workspace:WaitForChild("Living")
-
-getgenv().AutoSafeMob = false
-
-local hrp = nil
-
-local function UpdateHRP(char)
-	task.wait(1)
-	hrp = char:WaitForChild("HumanoidRootPart")
-end
-
-if LocalPlayer.Character then
-	UpdateHRP(LocalPlayer.Character)
-end
-LocalPlayer.CharacterAdded:Connect(UpdateHRP)
-
-----------------------------------------------------------
--- HOVER SYSTEM (giống script AutoBoss của bạn)
-----------------------------------------------------------
-
-local function EnableHover(root)
-	if not root:FindFirstChild("BodyPosition") then
-		local bp = Instance.new("BodyPosition")
-		bp.MaxForce = Vector3.new(9e9,9e9,9e9)
-		bp.P = 5e4
-		bp.D = 1000
-		bp.Name = "BodyPosition"
-		bp.Parent = root
-	end
-	if not root:FindFirstChild("BodyGyro") then
-		local bg = Instance.new("BodyGyro")
-		bg.MaxTorque = Vector3.new(9e9,9e9,9e9)
-		bg.P = 5e4
-		bg.D = 1000
-		bg.CFrame = CFrame.new(root.Position)
-		bg.Name = "BodyGyro"
-		bg.Parent = root
-	end
-end
-
-local function DisableHover(root)
-	local bp = root:FindFirstChild("BodyPosition")
-	if bp then bp:Destroy() end
-	local bg = root:FindFirstChild("BodyGyro")
-	if bg then bg:Destroy() end
-end
-
-----------------------------------------------------------
--- FUNCTION: Lấy mob hợp lệ
-----------------------------------------------------------
-local function getAllMobs()
-	local mobs = {}
-	for _, mob in pairs(livingFolder:GetChildren()) do
-		if mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") then
-			if mob.Humanoid.Health > 0 then
-				table.insert(mobs, mob)
-			end
-		end
-	end
-	return mobs
-end
-
-
-local function getClosestPlayer()
-	local myChar = LocalPlayer.Character
-	if not myChar then return nil, math.huge end
-
-	local myPos = myChar:WaitForChild("HumanoidRootPart").Position
-	local nearest, dist = nil, math.huge
-
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer
-			and plr.Character
-			and plr.Character:FindFirstChild("HumanoidRootPart")
-		then
-			local d = (plr.Character.HumanoidRootPart.Position - myPos).Magnitude
-			if d < dist then
-				dist = d
-				nearest = plr
-			end
-		end
-	end
-
-	return nearest, dist
-end
-
-
-local function findSafeMob()
-	local mobs = getAllMobs()
-	local nearestPlayer, distPlayer = getClosestPlayer()
-
-
-	if not nearestPlayer or distPlayer > 50 then
-		return nil
-	end
-
-	local safeList = {}
-	for _, mob in ipairs(mobs) do
-		local mobPos = mob.HumanoidRootPart.Position
-		local plPos = nearestPlayer.Character.HumanoidRootPart.Position
-
-		if (mobPos - plPos).Magnitude >= 500 then
-			table.insert(safeList, mob)
-		end
-	end
-
-	if #safeList > 0 then
-		return safeList[math.random(1, #safeList)]
-	end
-
-	return nil
-end
-
-
-task.spawn(function()
-	while task.wait(0.3) do
-		if not getgenv().AutoSafeMob then
-			if hrp then DisableHover(hrp) end
-			continue
-		end
-
-		if not hrp then continue end
-
-		local mobs = getAllMobs()
-		if #mobs == 0 then continue end
-
-
-		local myPos = hrp.Position
-		local closestMob
-		local minDist = math.huge
-
-		for _, mob in ipairs(mobs) do
-			local d = (mob.HumanoidRootPart.Position - myPos).Magnitude
-			if d < minDist then
-				minDist = d
-				closestMob = mob
-			end
-		end
-
-		if not closestMob then continue end
-
-
-		EnableHover(hrp)
-		local bp = hrp:FindFirstChild("BodyPosition")
-
-
-		local safeMob = findSafeMob()
-
-
-		if safeMob then
-			if bp then
-				bp.Position = safeMob.HumanoidRootPart.Position + Vector3.new(0, 10, 0)
-			end
-		else
-
-			if bp then
-				bp.Position = closestMob.HumanoidRootPart.Position + Vector3.new(0, 50, 0)
-			end
-		end
-	end
-end)
-
-
-
-Ect:AddToggle({
-	Name = "Auto Safe Mob",
-	Default = false,
-	Callback = function(v)
-		getgenv().AutoSafeMob = v
-		if not v and hrp then
-			DisableHover(hrp)
-		end
-	end
-})
-
-
-
+-- Phần UI / callback giữ nguyên (chỉ ví dụ lại)
 Farm:AddTextbox({
     Name = "Item cần bán (VD: Copper1)",
     Default = "",
@@ -394,7 +229,6 @@ Farm:AddTextbox({
         getgenv().SellInput = v
     end
 })
-
 
 Farm:AddButton({
     Name = "Bán Item",
@@ -407,7 +241,7 @@ Farm:AddButton({
 
         local item, amount = ParseInput(text)
         if not item or not amount then
-            warn("Sai định dạng! Nhập như: Copper1, Iron20")
+            warn("Sai định dạng!")
             return
         end
 
@@ -430,130 +264,120 @@ Farm:AddButton({
             :WaitForChild("RunCommand")
             :InvokeServer(unpack(args))
 
-        print("Đã bán:", item, amount)
     end
 })
 
-Forge:AddToggle({
+Forge:AddButton({
     Name = "Auto Pour Minigame",
-    Default = false,
-    Callback = function(enabled)
-        if enabled then
-            -- Khởi động auto pour minigame
-            task.spawn(function()
-                local Players = game:GetService("Players")
-                local player = Players.LocalPlayer
-                local VirtualInputManager = game:GetService("VirtualInputManager")
+    Callback = function()
+        task.spawn(function()
+            local Players = game:GetService("Players")
+            local player = Players.LocalPlayer
+            local VirtualInputManager = game:GetService("VirtualInputManager")
+            
+            -- Tìm PourMinigame GUI
+            local function GetPourMinigame()
+                local playerGui = player:WaitForChild("PlayerGui")
+                local forge = playerGui:FindFirstChild("Forge")
+                if forge then
+                    return forge:FindFirstChild("PourMinigame")
+                end
+                return nil
+            end
+            
+            -- Kiểm tra xem Line có nằm trong Area không
+            local function IsLineInArea(line, area)
+                local lineY = line.Position.Y.Scale
+                local areaY = area.Position.Y.Scale
+                local areaHeight = area.Size.Y.Scale
+                local areaMidY = areaY + (areaHeight / 2)
+                return lineY >= areaY and lineY <= (areaY + areaHeight), areaMidY
+            end
+            
+            local function AutoPlayMinigame()
+                local pourMinigame = GetPourMinigame()
+                if not pourMinigame then return end
                 
-                -- Tìm PourMinigame GUI
-                local function GetPourMinigame()
-                    local playerGui = player:WaitForChild("PlayerGui")
-                    local forge = playerGui:FindFirstChild("Forge")
-                    if forge then
-                        return forge:FindFirstChild("PourMinigame")
+                local frame = pourMinigame:WaitForChild("Frame")
+                local line = frame:WaitForChild("Line")
+                local area = frame:WaitForChild("Area")
+                local timer = pourMinigame:WaitForChild("Timer")
+                local bar = timer:WaitForChild("Bar")
+                
+                local isHolding = false
+                local running = true
+                local minHoldTimeInside = 0.2
+                local lastEnterTime = 0
+                local wasInArea = false
+                
+                local function SimulateInput(isPressed)
+                    if isPressed and not isHolding then
+                        isHolding = true
+                        pcall(function()
+                            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                        end)
+                    elseif not isPressed and isHolding then
+                        isHolding = false
+                        pcall(function()
+                            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                        end)
                     end
-                    return nil
                 end
                 
-                -- Kiểm tra xem Line có nằm trong Area không
-                local function IsLineInArea(line, area)
-                    local lineY = line.Position.Y.Scale
-                    local areaY = area.Position.Y.Scale
-                    local areaHeight = area.Size.Y.Scale
-                    local areaMidY = areaY + (areaHeight / 2)
-                    return lineY >= areaY and lineY <= (areaY + areaHeight), areaMidY
-                end
-                
-                local function AutoPlayMinigame()
-                    local pourMinigame = GetPourMinigame()
-                    if not pourMinigame then
-                        return
-                    end
-                    
-                    local frame = pourMinigame:WaitForChild("Frame")
-                    local line = frame:WaitForChild("Line")
-                    local area = frame:WaitForChild("Area")
-                    local timer = pourMinigame:WaitForChild("Timer")
-                    local bar = timer:WaitForChild("Bar")
-                    
-                    local isHolding = false
-                    local running = true
-                    local minHoldTimeInside = 0.2   
-                    local lastEnterTime = 0
-                    local wasInArea = false
-                    
-                    local function SimulateInput(isPressed)
-                        if isPressed and not isHolding then
-                            isHolding = true
-                            pcall(function()
-                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-                            end)
-                        elseif not isPressed and isHolding then
-                            isHolding = false
-                            pcall(function()
-                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-                            end)
-                        end
-                    end
-                    
-                    task.spawn(function()
-                        while running and pourMinigame.Visible do
-                            local inArea = IsLineInArea(line, area)
-                            
-                            if inArea then
-                                if not wasInArea then
-                                    lastEnterTime = tick()
-                                end
-                                
-                                if tick() - lastEnterTime >= minHoldTimeInside then
-                                    SimulateInput(false)
-                                end
-                                
-                                wasInArea = true
-                            else
-                                SimulateInput(true)
-                                wasInArea = false
+                task.spawn(function()
+                    while running and pourMinigame.Visible do
+                        local inArea = IsLineInArea(line, area)
+                        
+                        if inArea then
+                            if not wasInArea then
+                                lastEnterTime = tick()
                             end
                             
-                            if bar.Size.X.Scale >= 1 then
+                            if tick() - lastEnterTime >= minHoldTimeInside then
                                 SimulateInput(false)
-                                break
                             end
                             
-                            task.wait(0.03)
+                            wasInArea = true
+                        else
+                            SimulateInput(true)
+                            wasInArea = false
                         end
                         
-                        if isHolding then SimulateInput(false) end
-                        running = false
-                    end)
-                    
-                    local connection
-                    connection = pourMinigame:GetPropertyChangedSignal("Visible"):Connect(function()
-                        if not pourMinigame.Visible then
-                            running = false
-                            if isHolding then SimulateInput(false) end
-                            if connection then connection:Disconnect() end
+                        if bar.Size.X.Scale >= 1 then
+                            SimulateInput(false)
+                            break
                         end
-                    end)
-                end
-                
-                -- Chờ minigame xuất hiện và tự động chơi
-                while enabled do
-                    local pourMinigame = GetPourMinigame()
-                    if pourMinigame and pourMinigame.Visible then
-                        task.wait(0.5)
-                        AutoPlayMinigame()
                         
-                        while pourMinigame.Visible and enabled do
-                            task.wait(0.5)
-                        end
+                        task.wait(0.03)
                     end
-                    task.wait(1)
-                end
-            end)
-        end
+                    
+                    if isHolding then SimulateInput(false) end
+                    running = false
+                end)
+                
+                pourMinigame:GetPropertyChangedSignal("Visible"):Connect(function()
+                    if not pourMinigame.Visible then
+                        running = false
+                        if isHolding then SimulateInput(false) end
+                    end
+                end)
+            end
+            
+            -- Chờ minigame xuất hiện rồi thực thi
+            print("Đang chờ minigame...")
+            local pourMinigame
+            
+            repeat
+                pourMinigame = GetPourMinigame()
+                task.wait(0.5)
+            until pourMinigame and pourMinigame.Visible
+            
+            print("Minigame xuất hiện → Chạy auto!")
+            AutoPlayMinigame()
+        end)
     end
 })
+
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
