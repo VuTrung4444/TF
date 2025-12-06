@@ -267,116 +267,184 @@ Farm:AddButton({
     end
 })
 
-Forge:AddButton({
-    Name = "Auto Pour Minigame",
-    Callback = function()
-        task.spawn(function()
-            local Players = game:GetService("Players")
-            local player = Players.LocalPlayer
-            local VirtualInputManager = game:GetService("VirtualInputManager")
-            
-            -- Tìm PourMinigame GUI
-            local function GetPourMinigame()
-                local playerGui = player:WaitForChild("PlayerGui")
-                local forge = playerGui:FindFirstChild("Forge")
-                if forge then
-                    return forge:FindFirstChild("PourMinigame")
-                end
-                return nil
-            end
-            
-            -- Kiểm tra xem Line có nằm trong Area không
-            local function IsLineInArea(line, area)
-                local lineY = line.Position.Y.Scale
-                local areaY = area.Position.Y.Scale
-                local areaHeight = area.Size.Y.Scale
-                local areaMidY = areaY + (areaHeight / 2)
-                return lineY >= areaY and lineY <= (areaY + areaHeight), areaMidY
-            end
-            
-            local function AutoPlayMinigame()
-                local pourMinigame = GetPourMinigame()
-                if not pourMinigame then return end
-                
-                local frame = pourMinigame:WaitForChild("Frame")
-                local line = frame:WaitForChild("Line")
-                local area = frame:WaitForChild("Area")
-                local timer = pourMinigame:WaitForChild("Timer")
-                local bar = timer:WaitForChild("Bar")
-                
-                local isHolding = false
-                local running = true
-                local minHoldTimeInside = 0.2
-                local lastEnterTime = 0
-                local wasInArea = false
-                
-                local function SimulateInput(isPressed)
-                    if isPressed and not isHolding then
-                        isHolding = true
-                        pcall(function()
-                            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-                        end)
-                    elseif not isPressed and isHolding then
-                        isHolding = false
-                        pcall(function()
-                            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-                        end)
-                    end
-                end
-                
-                task.spawn(function()
-                    while running and pourMinigame.Visible do
-                        local inArea = IsLineInArea(line, area)
-                        
-                        if inArea then
-                            if not wasInArea then
-                                lastEnterTime = tick()
-                            end
-                            
-                            if tick() - lastEnterTime >= minHoldTimeInside then
-                                SimulateInput(false)
-                            end
-                            
-                            wasInArea = true
-                        else
-                            SimulateInput(true)
-                            wasInArea = false
-                        end
-                        
-                        if bar.Size.X.Scale >= 1 then
-                            SimulateInput(false)
-                            break
-                        end
-                        
-                        task.wait(0.03)
-                    end
+Farm:AddButton("Auto Sell Tools", function()
+
+    local Players = game:GetService("Players")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    -- Thư mục chứa items
+    local toolsFolder = playerGui
+        :WaitForChild("Menu")
+        .Frame.Frame.Menus.Tools.Frame
+
+    local function AutoSellAll()
+        local basket = {}
+
+        -- Quét từng item
+        for _, itemFrame in pairs(toolsFolder:GetChildren()) do
+            if itemFrame:IsA("Frame") then
+
+                -- Tìm Equip.TextLabel
+                local equipBtn = itemFrame:FindFirstChild("Equip")
+                if equipBtn and equipBtn:FindFirstChild("TextLabel") then
                     
-                    if isHolding then SimulateInput(false) end
-                    running = false
-                end)
-                
-                pourMinigame:GetPropertyChangedSignal("Visible"):Connect(function()
-                    if not pourMinigame.Visible then
-                        running = false
-                        if isHolding then SimulateInput(false) end
+                    local state = equipBtn.TextLabel.Text  -- "Equip" hoặc "Unequip"
+
+                    -- Nếu là Equip → đưa vào basket để bán
+                    if state == "Equip" then
+                        local uuid = itemFrame.Name
+                        basket[uuid] = true
                     end
-                end)
+                end
             end
-            
-            -- Chờ minigame xuất hiện rồi thực thi
-            print("Đang chờ minigame...")
-            local pourMinigame
-            
-            repeat
-                pourMinigame = GetPourMinigame()
-                task.wait(0.5)
-            until pourMinigame and pourMinigame.Visible
-            
-            print("Minigame xuất hiện → Chạy auto!")
-            AutoPlayMinigame()
-        end)
+        end
+
+        -- Nếu không có gì → dừng
+        if next(basket) == nil then
+            warn("Không có item hợp lệ để bán!")
+            return
+        end
+
+        -- Gửi lệnh bán
+        local args = {
+            "SellConfirm",
+            { Basket = basket }
+        }
+
+        ReplicatedStorage
+            :WaitForChild("Shared")
+            :WaitForChild("Packages")
+            :WaitForChild("Knit")
+            :WaitForChild("Services")
+            :WaitForChild("DialogueService")
+            :WaitForChild("RF")
+            :WaitForChild("RunCommand")
+            :InvokeServer(unpack(args))
+
+    end
+
+    AutoSellAll()
+
+end)
+
+
+Forge:AddToggle({
+    Name = "Auto Pour Minigame",
+    Default = false,
+    Callback = function(enabled)
+        if enabled then
+            task.spawn(function()
+                local Players = game:GetService("Players")
+                local player = Players.LocalPlayer
+                local VirtualInputManager = game:GetService("VirtualInputManager")
+
+                local function GetPourMinigame()
+                    local playerGui = player:WaitForChild("PlayerGui")
+                    local forge = playerGui:FindFirstChild("Forge")
+                    if forge then
+                        return forge:FindFirstChild("PourMinigame")
+                    end
+                    return nil
+                end
+
+                local function IsLineInArea(line, area)
+                    local lineY = line.Position.Y.Scale
+                    local areaY = area.Position.Y.Scale
+                    local areaHeight = area.Size.Y.Scale
+                    local areaMidY = areaY + (areaHeight / 2)
+                    return lineY >= areaY and lineY <= (areaY + areaHeight), areaMidY
+                end
+
+                local function AutoPlayMinigame()
+                    local pourMinigame = GetPourMinigame()
+                    if not pourMinigame then return end
+
+                    local frame = pourMinigame:WaitForChild("Frame")
+                    local line = frame:WaitForChild("Line")
+                    local area = frame:WaitForChild("Area")
+                    local timer = pourMinigame:WaitForChild("Timer")
+                    local bar = timer:WaitForChild("Bar")
+
+                    local isHolding = false
+                    local running = true
+                    local minHoldTimeInside = 0.2
+                    local lastEnterTime = 0
+                    local wasInArea = false
+
+                    local function SimulateInput(isPressed)
+                        if isPressed and not isHolding then
+                            isHolding = true
+                            pcall(function()
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                            end)
+                        elseif not isPressed and isHolding then
+                            isHolding = false
+                            pcall(function()
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                            end)
+                        end
+                    end
+
+                    task.spawn(function()
+                        while running and pourMinigame.Visible do
+                            local inArea = IsLineInArea(line, area)
+
+                            if inArea then
+                                if not wasInArea then
+                                    lastEnterTime = tick()
+                                end
+
+                                if tick() - lastEnterTime >= minHoldTimeInside then
+                                    SimulateInput(false)
+                                end
+
+                                wasInArea = true
+                            else
+                                SimulateInput(true)
+                                wasInArea = false
+                            end
+
+                            if bar.Size.X.Scale >= 1 then
+                                SimulateInput(false)
+                                break
+                            end
+
+                            task.wait(0.03)
+                        end
+
+                        if isHolding then SimulateInput(false) end
+                        running = false
+                    end)
+
+                    local connection
+                    connection = pourMinigame:GetPropertyChangedSignal("Visible"):Connect(function()
+                        if not pourMinigame.Visible then
+                            running = false
+                            if isHolding then SimulateInput(false) end
+                            if connection then connection:Disconnect() end
+                        end
+                    end)
+                end
+
+                while enabled do
+                    local pourMinigame = GetPourMinigame()
+                    if pourMinigame and pourMinigame.Visible then
+                        task.wait(0.5)
+                        AutoPlayMinigame()
+                        while pourMinigame.Visible and enabled do
+                            task.wait(0.5)
+                        end
+                    end
+                    task.wait(1)
+                end
+            end)
+        end
     end
 })
+
 
 
 local Players = game:GetService("Players")
