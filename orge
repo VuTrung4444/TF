@@ -231,104 +231,69 @@ Farm:AddTextbox({
 })
 
 Farm:AddButton({
-    Name = "Bán Item",
-    Callback = function()
-        local text = getgenv().SellInput
-        if not text or text == "" then
-            warn("Chưa nhập tên item!")
-            return
-        end
+    Name = "Auto Sell Tools",
+    Default = false,
+    Callback = function(state)
+        if not state then return end
 
-        local item, amount = ParseInput(text)
-        if not item or not amount then
-            warn("Sai định dạng!")
-            return
-        end
+        local Players = game:GetService("Players")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-        local args = {
-            "SellConfirm",
-            {
-                Basket = {
-                    [item] = amount
-                }
-            }
-        }
+        local player = Players.LocalPlayer
+        local playerGui = player:WaitForChild("PlayerGui")
 
-        ReplicatedStorage
-            :WaitForChild("Shared")
-            :WaitForChild("Packages")
-            :WaitForChild("Knit")
-            :WaitForChild("Services")
-            :WaitForChild("DialogueService")
-            :WaitForChild("RF")
-            :WaitForChild("RunCommand")
-            :InvokeServer(unpack(args))
+        local toolsRoot = playerGui
+            :WaitForChild("Menu")
+            .Frame.Frame.Menus.Tools.Frame
 
-    end
-})
-
-Farm:AddButton("Auto Sell Tools", function()
-
-    local Players = game:GetService("Players")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-    local player = Players.LocalPlayer
-    local playerGui = player:WaitForChild("PlayerGui")
-
-    -- Thư mục chứa items
-    local toolsFolder = playerGui
-        :WaitForChild("Menu")
-        .Frame.Frame.Menus.Tools.Frame
-
-    local function AutoSellAll()
-        local basket = {}
-
-        -- Quét từng item
-        for _, itemFrame in pairs(toolsFolder:GetChildren()) do
-            if itemFrame:IsA("Frame") then
-
-                -- Tìm Equip.TextLabel
-                local equipBtn = itemFrame:FindFirstChild("Equip")
-                if equipBtn and equipBtn:FindFirstChild("TextLabel") then
-                    
-                    local state = equipBtn.TextLabel.Text  -- "Equip" hoặc "Unequip"
-
-                    -- Nếu là Equip → đưa vào basket để bán
-                    if state == "Equip" then
-                        local uuid = itemFrame.Name
-                        basket[uuid] = true
+        local function scanFolder(folder, basket)
+            for _, child in pairs(folder:GetChildren()) do
+                -- Nếu child có Equip thì kiểm tra TextLabel.Text
+                local equip = child:FindFirstChild("Equip")
+                if equip and equip:FindFirstChild("TextLabel") then
+                    local stateText = equip.TextLabel.Text
+                    if stateText == "Equip" then
+                        basket[child.Name] = true
+                    end
+                else
+                    -- Nếu không có Equip, có thể là folder/category: quét đệ quy
+                    if #child:GetChildren() > 0 then
+                        scanFolder(child, basket)
                     end
                 end
             end
         end
 
-        -- Nếu không có gì → dừng
-        if next(basket) == nil then
-            warn("Không có item hợp lệ để bán!")
-            return
+        local function AutoSellAll()
+            local basket = {}
+            scanFolder(toolsRoot, basket)
+
+            if next(basket) == nil then
+                warn("Không có item hợp lệ để bán!")
+                return
+            end
+
+            local args = {
+                "SellConfirm",
+                { Basket = basket }
+            }
+
+            ReplicatedStorage
+                :WaitForChild("Shared")
+                :WaitForChild("Packages")
+                :WaitForChild("Knit")
+                :WaitForChild("Services")
+                :WaitForChild("DialogueService")
+                :WaitForChild("RF")
+                :WaitForChild("RunCommand")
+                :InvokeServer(unpack(args))
+
+            print("Đã gửi lệnh bán cho các UUID:", basket)
         end
 
-        -- Gửi lệnh bán
-        local args = {
-            "SellConfirm",
-            { Basket = basket }
-        }
-
-        ReplicatedStorage
-            :WaitForChild("Shared")
-            :WaitForChild("Packages")
-            :WaitForChild("Knit")
-            :WaitForChild("Services")
-            :WaitForChild("DialogueService")
-            :WaitForChild("RF")
-            :WaitForChild("RunCommand")
-            :InvokeServer(unpack(args))
-
+        AutoSellAll()
     end
-
-    AutoSellAll()
-
-end)
+})
 
 
 Forge:AddToggle({
