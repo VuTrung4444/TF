@@ -231,6 +231,42 @@ Farm:AddTextbox({
 })
 
 Farm:AddButton({
+    Name = "Bán Item",
+    Callback = function()
+        local text = getgenv().SellInput
+        if not text or text == "" then
+            warn("Chưa nhập tên item!")
+            return
+        end
+
+        local item, amount = ParseInput(text)
+        if not item or not amount then
+            warn("Sai định dạng!")
+            return
+        end
+
+        local args = {
+            "SellConfirm",
+            {
+                Basket = {
+                    [item] = amount
+                }
+            }
+        }
+
+        ReplicatedStorage
+            :WaitForChild("Shared")
+            :WaitForChild("Packages")
+            :WaitForChild("Knit")
+            :WaitForChild("Services")
+            :WaitForChild("DialogueService")
+            :WaitForChild("RF")
+            :WaitForChild("RunCommand")
+            :InvokeServer(unpack(args))
+
+    end
+})
+Farm:AddButton({
     Name = "Auto Sell Tools",
     Default = false,
     Callback = function(state)
