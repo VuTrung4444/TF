@@ -231,7 +231,7 @@ Farm:AddTextbox({
 })
 
 Farm:AddButton({
-    Name = "Bán Item",
+    Name = "Bán Quặng",
     Callback = function()
         local text = getgenv().SellInput
         if not text or text == "" then
@@ -267,7 +267,7 @@ Farm:AddButton({
     end
 })
 Farm:AddButton({
-    Name = "Auto Sell Tools",
+    Name = "Bán Vật Phẩm",
     Default = false,
     Callback = function(state)
         if not state then return end
