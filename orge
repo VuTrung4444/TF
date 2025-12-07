@@ -59,7 +59,7 @@ local function StartAutoPickaxe()
                 :WaitForChild("ToolActivated")
                 :InvokeServer(unpack(args))
 
-            task.wait(0.5)
+            task.wait(0.2)
         end
     end)
 end
