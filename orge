@@ -131,7 +131,7 @@ Auto:AddToggle({
 
 UserInputService.InputBegan:Connect(function(input, typing)
     if typing then return end
-    if input.KeyCode == Enum.KeyCode.H then
+    if input.KeyCode == Enum.KeyCode.J then
         getgenv().AutoWeaponR = not getgenv().AutoWeaponR
 
         if getgenv().AutoWeaponR then
@@ -164,14 +164,14 @@ local function StartAutoWeapon02()
                 :WaitForChild("ToolActivated")
                 :InvokeServer(unpack(args))
 
-            task.wait(0.2)
+            task.wait(0.1)
         end
     end)
 end
 
 
 Auto:AddToggle({
-    Name = "Auto Weapon 0.2s",
+    Name = "Auto Weapon",
     Default = false,
     Callback = function(state)
         getgenv().AutoWeapon02 = state
@@ -184,7 +184,7 @@ Auto:AddToggle({
 
 UserInputService.InputBegan:Connect(function(input, typing)
     if typing then return end
-    if input.KeyCode == Enum.KeyCode.J then
+    if input.KeyCode == Enum.KeyCode.H then
         getgenv().AutoWeapon02 = not getgenv().AutoWeapon02
         if getgenv().AutoWeapon02 then
             StartAutoWeapon02()
