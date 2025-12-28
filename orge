@@ -36,14 +36,15 @@ local placeId = game.PlaceId
 	local Calamity = MiscTab:CreateSection({Name = "Calamity", Side = "Right"})
 	local SpeedAndJump = MiscTab:CreateSection({Name = "Speed&Jump", Side = "Right"})
 
+
 getgenv().AutoRock = false
 getgenv().AutoMob = false
 getgenv().AutoGreedyCey = false
 getgenv().AutoSellWhenFull = true
-getgenv().TP_SPEED = 80
+getgenv().TP_SPEED = 100
 getgenv().PriorityTarget = ""
 local DISTANCE_OFFSET = 3
-local HEIGHT_OFFSET = 5
+local HEIGHT_OFFSET = 3
 local STASH_FULL_THRESHOLD = 0.9
 -- =========================
 
@@ -249,12 +250,45 @@ local function getNearestRock()
     if not hrp then return nil end
     
     local nearest, dist = nil, math.huge
-    local priorityTarget = nil
-    local priorityDist = math.huge
     
     -- Kiểm tra nếu có priority target
     local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
     
+    if hasPriority then
+        -- Ưu tiên tìm theo tên folder trước
+        local priorityLower = trim(getgenv().PriorityTarget):lower()
+        local priorityTarget = nil
+        local priorityDist = math.huge
+        
+        for _, folder in pairs(Rocks:GetChildren()) do
+            if folder:IsA("Folder") then
+                local folderNameLower = folder.Name:lower()
+                
+                -- Kiểm tra xem folder name có khớp chính xác không
+                if folderNameLower == priorityLower or folderNameLower:find("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1") .. "%d*$") then
+                    -- Tìm rock hợp lệ trong folder này
+                    for _, rock in pairs(folder:GetChildren()) do
+                        if isValidRock(rock) then
+                            local pos = rock:GetPivot().Position
+                            local d = (hrp.Position - pos).Magnitude
+                            
+                            if d < priorityDist then
+                                priorityDist = d
+                                priorityTarget = rock
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Nếu tìm thấy priority target thì return luôn
+        if priorityTarget then
+            return priorityTarget
+        end
+    end
+    
+    -- Nếu không có priority hoặc không tìm thấy, tìm nearest
     for _, folder in pairs(Rocks:GetChildren()) do
         if folder:IsA("Folder") then
             for _, rock in pairs(folder:GetChildren()) do
@@ -262,22 +296,6 @@ local function getNearestRock()
                     local pos = rock:GetPivot().Position
                     local d = (hrp.Position - pos).Magnitude
                     
-                    -- Kiểm tra priority - so khớp chính xác phần tên (bỏ qua số ở cuối)
-                    if hasPriority then
-                        local rockName = folder.Name
-                        local baseName = rockName:match("^(.-)%d*$") -- Lấy phần tên không có số
-                        local priorityLower = getgenv().PriorityTarget:lower()
-                        
-                        -- Kiểm tra khớp chính xác hoặc bắt đầu bằng priority
-                        if baseName:lower() == priorityLower or rockName:lower():match("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")) then
-                            if d < priorityDist then
-                                priorityDist = d
-                                priorityTarget = rock
-                            end
-                        end
-                    end
-                    
-                    -- Tìm nearest thông thường
                     if d < dist then
                         dist = d
                         nearest = rock
@@ -287,8 +305,7 @@ local function getNearestRock()
         end
     end
     
-    -- Trả về priority nếu tìm thấy, không thì trả về nearest
-    return priorityTarget or nearest
+    return nearest
 end
 
 local function startRockFarming()
@@ -413,12 +430,44 @@ local function getNearestMob()
     if not hrp then return nil end
     
     local nearest, dist = nil, math.huge
-    local priorityTarget = nil
-    local priorityDist = math.huge
     
     -- Kiểm tra nếu có priority target
     local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
     
+    if hasPriority then
+        -- Ưu tiên tìm theo tên mob trước
+        local priorityLower = trim(getgenv().PriorityTarget):lower()
+        local priorityTarget = nil
+        local priorityDist = math.huge
+        
+        for _, mob in pairs(Living:GetChildren()) do
+            if isValidMob(mob) then
+                local mobHrp = mob:FindFirstChild("HumanoidRootPart")
+                if mobHrp then
+                    local mobName = mob.Name
+                    local mobNameLower = mobName:lower()
+                    
+                    -- Kiểm tra xem mob name có khớp chính xác không
+                    if mobNameLower == priorityLower or mobNameLower:find("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1") .. "%d*$") then
+                        local pos = mobHrp.Position
+                        local d = (hrp.Position - pos).Magnitude
+                        
+                        if d < priorityDist then
+                            priorityDist = d
+                            priorityTarget = mob
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Nếu tìm thấy priority target thì return luôn
+        if priorityTarget then
+            return priorityTarget
+        end
+    end
+    
+    -- Nếu không có priority hoặc không tìm thấy, tìm nearest
     for _, mob in pairs(Living:GetChildren()) do
         if isValidMob(mob) then
             local mobHrp = mob:FindFirstChild("HumanoidRootPart")
@@ -426,22 +475,6 @@ local function getNearestMob()
                 local pos = mobHrp.Position
                 local d = (hrp.Position - pos).Magnitude
                 
-                -- Kiểm tra priority - so khớp chính xác phần tên (bỏ qua số ở cuối)
-                if hasPriority then
-                    local mobName = mob.Name
-                    local baseName = mobName:match("^(.-)%d*$") -- Lấy phần tên không có số
-                    local priorityLower = getgenv().PriorityTarget:lower()
-                    
-                    -- Kiểm tra khớp chính xác hoặc bắt đầu bằng priority
-                    if baseName:lower() == priorityLower or mobName:lower():match("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")) then
-                        if d < priorityDist then
-                            priorityDist = d
-                            priorityTarget = mob
-                        end
-                    end
-                end
-                
-                -- Tìm nearest thông thường
                 if d < dist then
                     dist = d
                     nearest = mob
@@ -450,8 +483,7 @@ local function getNearestMob()
         end
     end
     
-    -- Trả về priority nếu tìm thấy, không thì trả về nearest
-    return priorityTarget or nearest
+    return nearest
 end
 
 local function startMobFarming()
@@ -782,6 +814,7 @@ AutoFarm:AddToggle({
         end
     end
 })
+
 
 
 local UserInputService = game:GetService("UserInputService")
