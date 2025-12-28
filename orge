@@ -36,13 +36,14 @@ local placeId = game.PlaceId
 	local Calamity = MiscTab:CreateSection({Name = "Calamity", Side = "Right"})
 	local SpeedAndJump = MiscTab:CreateSection({Name = "Speed&Jump", Side = "Right"})
 
-
-	getgenv().AutoRock = false
+getgenv().AutoRock = false
     getgenv().AutoMob = false
     getgenv().AutoGreedyCey = false
+    getgenv().AutoSellWhenFull = true
     getgenv().TP_SPEED = 150
     getgenv().PriorityTarget = ""
     local DISTANCE_OFFSET = 2
+    local STASH_FULL_THRESHOLD = 0.9 -- 90% đầy sẽ bán
     -- =========================
 
     local RunService = game:GetService("RunService")
@@ -53,16 +54,117 @@ local placeId = game.PlaceId
     local Rocks = Workspace:WaitForChild("Rocks")
     local Living = Workspace:WaitForChild("Living")
     local Proximity = Workspace:WaitForChild("Proximity")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
     local RockThread = nil
     local MobThread = nil
     local GreedyCeyThread = nil
+    local StashMonitorThread = nil
     local CurrentRockTarget = nil
     local CurrentMobTarget = nil
 
     -- ===== SHARED FUNCTIONS =====
     local function trim(s)
         return s:match("^%s*(.-)%s*$")
+    end
+    
+    local function getStashCapacity()
+        local success, result = pcall(function()
+            local capacityLabel = Player.PlayerGui:WaitForChild("Menu")
+                :WaitForChild("Frame")
+                :WaitForChild("Frame")
+                :WaitForChild("Menus")
+                :WaitForChild("Stash")
+                :WaitForChild("Capacity")
+            
+            local text = capacityLabel.Text
+            -- Parse "Stash Capacity: 66/138"
+            local current, max = text:match("(%d+)/(%d+)")
+            if current and max then
+                return tonumber(current), tonumber(max)
+            end
+            return 0, 0
+        end)
+        
+        if success then
+            return result
+        else
+            return 0, 0
+        end
+    end
+    
+    local function extractQuantity(quantityText)
+        if not quantityText then return 0 end
+        local num = quantityText:match("x(%d+)")
+        return tonumber(num) or 0
+    end
+    
+    local function sellItem(itemName, amount)
+        if not itemName or not amount or amount <= 0 then
+            return false
+        end
+        
+        local args = {
+            "SellConfirm",
+            {
+                Basket = {
+                    [itemName] = amount
+                }
+            }
+        }
+        
+        local success = pcall(function()
+            ReplicatedStorage
+                :WaitForChild("Shared")
+                :WaitForChild("Packages")
+                :WaitForChild("Knit")
+                :WaitForChild("Services")
+                :WaitForChild("DialogueService")
+                :WaitForChild("RF")
+                :WaitForChild("RunCommand")
+                :InvokeServer(unpack(args))
+        end)
+        
+        return success
+    end
+    
+    local function sellAllItems()
+        local stashBackground = Player.PlayerGui:WaitForChild("Menu")
+            :WaitForChild("Frame")
+            :WaitForChild("Frame")
+            :WaitForChild("Menus")
+            :WaitForChild("Stash")
+            :WaitForChild("Background")
+        
+        local itemsSold = 0
+        
+        for _, itemFrame in pairs(stashBackground:GetChildren()) do
+            if itemFrame:IsA("Frame") or itemFrame:IsA("GuiObject") then
+                local mainFrame = itemFrame:FindFirstChild("Main")
+                if mainFrame then
+                    local hasFavorite = mainFrame:FindFirstChild("Favorite")
+                    
+                    if not hasFavorite then
+                        local quantityLabel = mainFrame:FindFirstChild("Quantity")
+                        if quantityLabel and quantityLabel:IsA("TextLabel") then
+                            local quantityText = quantityLabel.Text
+                            local amount = extractQuantity(quantityText)
+                            
+                            if amount > 0 then
+                                local itemName = itemFrame.Name
+                                local success = sellItem(itemName, amount)
+                                if success then
+                                    itemsSold = itemsSold + 1
+                                    task.wait(0.2)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        return itemsSold
     end
     
     local function getOffsetPosition(targetPos, playerPos)
@@ -243,7 +345,6 @@ local placeId = game.PlaceId
     end
 
     -- ===== MOB FARMING =====
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local MobNames = {}
     
     local function loadMobNames()
@@ -464,6 +565,90 @@ local placeId = game.PlaceId
         end
     end
 
+    -- ===== STASH MONITOR =====
+    local function startStashMonitor()
+        if StashMonitorThread then return end
+        
+        StashMonitorThread = task.spawn(function()
+            while getgenv().AutoSellWhenFull do
+                task.wait(10) 
+                
+                pcall(function()
+                    if not getgenv().AutoRock and not getgenv().AutoMob then
+                        return
+                    end
+                    
+                    local current, max = getStashCapacity()
+                    
+                    if max > 0 and current / max >= STASH_FULL_THRESHOLD then
+                        print("=== Stash gần đầy:", current .. "/" .. max, "===")
+                        
+                        -- Lưu trạng thái farming hiện tại
+                        local wasRockFarming = getgenv().AutoRock
+                        local wasMobFarming = getgenv().AutoMob
+                        
+                        -- Tạm dừng farming
+                        if wasRockFarming then
+                            getgenv().AutoRock = false
+                            task.wait(0.5)
+                        end
+                        if wasMobFarming then
+                            getgenv().AutoMob = false
+                            task.wait(0.5)
+                        end
+                        
+
+                        local greedyCey = Proximity:FindFirstChild("Greedy Cey")
+                        if greedyCey then
+                            local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                            if hrp then
+
+                                local targetPos = greedyCey:GetPivot().Position
+                                smoothMoveTo(targetPos, getgenv().TP_SPEED)
+                                task.wait(5)
+                                
+
+                                local beforeCurrent, beforeMax = getStashCapacity()
+                                local itemsSold = sellAllItems()
+                                task.wait(1)
+                                
+                                local afterCurrent, afterMax = getStashCapacity()
+                                
+                                print("Trước bán:", beforeCurrent .. "/" .. beforeMax)
+                                print("Sau bán:", afterCurrent .. "/" .. afterMax)
+                                print("Số items đã bán:", itemsSold)
+                                
+                                -- Kiểm tra nếu không bán được gì (toàn favorite)
+                                if beforeCurrent == afterCurrent and itemsSold == 0 then
+                                    print("!!! Tất cả items đều là Favorite, tắt auto sell !!!")
+                                    getgenv().AutoSellWhenFull = false
+                                end
+                            end
+                        end
+
+                        if wasRockFarming then
+                            getgenv().AutoRock = true
+                            startRockFarming()
+                        end
+                        if wasMobFarming then
+                            getgenv().AutoMob = true
+                            startMobFarming()
+                        end
+                    end
+                end)
+            end
+            StashMonitorThread = nil
+        end)
+    end
+    
+    local function stopStashMonitor()
+        getgenv().AutoSellWhenFull = false
+        if StashMonitorThread then
+            task.cancel(StashMonitorThread)
+            StashMonitorThread = nil
+        end
+    end
+
     -- ===== TOGGLES =====
     AutoFarm:AddTextbox({
         Name = "Ưu tiên Target (VD: Zombie hoặc Iron)",
@@ -503,7 +688,7 @@ local placeId = game.PlaceId
     })
     
     AutoFarm:AddToggle({
-        Name = "Auto Farm Greedy Cey",
+        Name = "Auto Greedy Cey",
         Flag = "AutoGreedyCeyToggle",
         Keybind = false,
         Callback = function(enabled)
@@ -744,6 +929,7 @@ Farm:AddButton({
 
     end
 })
+
 Farm:AddButton({
     Name = "Bán Vật Phẩm",
     Default = false,
@@ -762,7 +948,7 @@ Farm:AddButton({
 
         local function scanFolder(folder, basket)
             for _, child in pairs(folder:GetChildren()) do
-                -- Nếu child có Equip thì kiểm tra TextLabel.Text
+
                 local equip = child:FindFirstChild("Equip")
                 if equip and equip:FindFirstChild("TextLabel") then
                     local stateText = equip.TextLabel.Text
@@ -770,7 +956,7 @@ Farm:AddButton({
                         basket[child.Name] = true
                     end
                 else
-                    -- Nếu không có Equip, có thể là folder/category: quét đệ quy
+
                     if #child:GetChildren() > 0 then
                         scanFolder(child, basket)
                     end
@@ -783,7 +969,6 @@ Farm:AddButton({
             scanFolder(toolsRoot, basket)
 
             if next(basket) == nil then
-                warn("Không có item hợp lệ để bán!")
                 return
             end
 
@@ -802,13 +987,107 @@ Farm:AddButton({
                 :WaitForChild("RunCommand")
                 :InvokeServer(unpack(args))
 
-            print("Đã gửi lệnh bán cho các UUID:", basket)
         end
 
         AutoSellAll()
     end
 })
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local function trim(s)
+    return s:match("^%s*(.-)%s*$")
+end
+
+local function extractQuantity(quantityText)
+    if not quantityText then return 0 end
+    -- Extract số từ text dạng "x22"
+    local num = quantityText:match("x(%d+)")
+    return tonumber(num) or 0
+end
+
+local function sellItem(itemName, amount)
+    if not itemName or not amount or amount <= 0 then
+        return false
+    end
+    
+    local args = {
+        "SellConfirm",
+        {
+            Basket = {
+                [itemName] = amount
+            }
+        }
+    }
+    
+    local success = pcall(function()
+        ReplicatedStorage
+            :WaitForChild("Shared")
+            :WaitForChild("Packages")
+            :WaitForChild("Knit")
+            :WaitForChild("Services")
+            :WaitForChild("DialogueService")
+            :WaitForChild("RF")
+            :WaitForChild("RunCommand")
+            :InvokeServer(unpack(args))
+    end)
+    
+    return success
+end
+
+local function sellAllItems()
+    local player = Players.LocalPlayer
+    local stashBackground = player.PlayerGui:WaitForChild("Menu")
+        :WaitForChild("Frame")
+        :WaitForChild("Frame")
+        :WaitForChild("Menus")
+        :WaitForChild("Stash")
+        :WaitForChild("Background")
+    
+    local itemsSold = 0
+    local totalAmount = 0
+    
+    for _, itemFrame in pairs(stashBackground:GetChildren()) do
+        if itemFrame:IsA("Frame") or itemFrame:IsA("GuiObject") then
+            local mainFrame = itemFrame:FindFirstChild("Main")
+            if mainFrame then
+
+                local hasFavorite = mainFrame:FindFirstChild("Favorite")
+                
+                if not hasFavorite then
+
+                    local quantityLabel = mainFrame:FindFirstChild("Quantity")
+                    if quantityLabel and quantityLabel:IsA("TextLabel") then
+                        local quantityText = quantityLabel.Text
+                        local amount = extractQuantity(quantityText)
+                        
+                        if amount > 0 then
+                            local itemName = itemFrame.Name
+
+                            
+                            local success = sellItem(itemName, amount)
+                            if success then
+                                itemsSold = itemsSold + 1
+                                totalAmount = totalAmount + amount
+                                task.wait(0.2) -- Delay giữa các lần bán
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+
+Farm:AddButton({
+    Name = "Sell All (Trừ Favorite)",
+    Callback = function()
+        print("=== Bắt đầu bán tất cả ===")
+        sellAllItems()
+    end
+})
 
 Forge:AddToggle({
     Name = "Auto Pour Minigame",
