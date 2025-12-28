@@ -42,7 +42,7 @@ getgenv().AutoRock = false
     getgenv().AutoSellWhenFull = true
     getgenv().TP_SPEED = 100
     getgenv().PriorityTarget = ""
-    local DISTANCE_OFFSET = 5
+    local DISTANCE_OFFSET = 3
     local STASH_FULL_THRESHOLD = 0.9
     -- =========================
 
