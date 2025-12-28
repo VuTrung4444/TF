@@ -37,381 +37,242 @@ local placeId = game.PlaceId
 	local SpeedAndJump = MiscTab:CreateSection({Name = "Speed&Jump", Side = "Right"})
 
 getgenv().AutoRock = false
-    getgenv().AutoMob = false
-    getgenv().AutoGreedyCey = false
-    getgenv().AutoSellWhenFull = true
-    getgenv().TP_SPEED = 100
-    getgenv().PriorityTarget = ""
-    local DISTANCE_OFFSET = 3
-    local STASH_FULL_THRESHOLD = 0.9
-    -- =========================
+getgenv().AutoMob = false
+getgenv().AutoGreedyCey = false
+getgenv().AutoSellWhenFull = true
+getgenv().TP_SPEED = 80
+getgenv().PriorityTarget = ""
+local DISTANCE_OFFSET = 3
+local HEIGHT_OFFSET = 5
+local STASH_FULL_THRESHOLD = 0.9
+-- =========================
 
-    local RunService = game:GetService("RunService")
-    local Players = game:GetService("Players")
-    local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
-    local Player = Players.LocalPlayer
-    local Rocks = Workspace:WaitForChild("Rocks")
-    local Living = Workspace:WaitForChild("Living")
-    local Proximity = Workspace:WaitForChild("Proximity")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Player = Players.LocalPlayer
+local Rocks = Workspace:WaitForChild("Rocks")
+local Living = Workspace:WaitForChild("Living")
+local Proximity = Workspace:WaitForChild("Proximity")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-    local RockThread = nil
-    local MobThread = nil
-    local GreedyCeyThread = nil
-    local StashMonitorThread = nil
-    local CurrentRockTarget = nil
-    local CurrentMobTarget = nil
+local RockThread = nil
+local MobThread = nil
+local GreedyCeyThread = nil
+local StashMonitorThread = nil
+local CurrentRockTarget = nil
+local CurrentMobTarget = nil
 
-    -- ===== SHARED FUNCTIONS =====
-    local function trim(s)
-        return s:match("^%s*(.-)%s*$")
-    end
-    
-    local function getStashCapacity()
-        local success, result = pcall(function()
-            local capacityLabel = Player.PlayerGui:WaitForChild("Menu")
-                :WaitForChild("Frame")
-                :WaitForChild("Frame")
-                :WaitForChild("Menus")
-                :WaitForChild("Stash")
-                :WaitForChild("Capacity")
-            
-            local text = capacityLabel.Text
-            -- Parse "Stash Capacity: 66/138"
-            local current, max = text:match("(%d+)/(%d+)")
-            if current and max then
-                return tonumber(current), tonumber(max)
-            end
-            return 0, 0
-        end)
-        
-        if success then
-            return result
-        else
-            return 0, 0
-        end
-    end
-    
-    local function extractQuantity(quantityText)
-        if not quantityText then return 0 end
-        local num = quantityText:match("x(%d+)")
-        return tonumber(num) or 0
-    end
-    
-    local function sellItem(itemName, amount)
-        if not itemName or not amount or amount <= 0 then
-            return false
-        end
-        
-        local args = {
-            "SellConfirm",
-            {
-                Basket = {
-                    [itemName] = amount
-                }
-            }
-        }
-        
-        local success = pcall(function()
-            ReplicatedStorage
-                :WaitForChild("Shared")
-                :WaitForChild("Packages")
-                :WaitForChild("Knit")
-                :WaitForChild("Services")
-                :WaitForChild("DialogueService")
-                :WaitForChild("RF")
-                :WaitForChild("RunCommand")
-                :InvokeServer(unpack(args))
-        end)
-        
-        return success
-    end
-    
-    local function sellAllItems()
-        local stashBackground = Player.PlayerGui:WaitForChild("Menu")
+-- ===== SHARED FUNCTIONS =====
+local function trim(s)
+    return s:match("^%s*(.-)%s*$")
+end
+
+local function getStashCapacity()
+    local success, result = pcall(function()
+        local capacityLabel = Player.PlayerGui:WaitForChild("Menu")
             :WaitForChild("Frame")
             :WaitForChild("Frame")
             :WaitForChild("Menus")
             :WaitForChild("Stash")
-            :WaitForChild("Background")
+            :WaitForChild("Capacity")
         
-        local itemsSold = 0
-        
-        for _, itemFrame in pairs(stashBackground:GetChildren()) do
-            if itemFrame:IsA("Frame") or itemFrame:IsA("GuiObject") then
-                local mainFrame = itemFrame:FindFirstChild("Main")
-                if mainFrame then
-                    local hasFavorite = mainFrame:FindFirstChild("Favorite")
-                    
-                    if not hasFavorite then
-                        local quantityLabel = mainFrame:FindFirstChild("Quantity")
-                        if quantityLabel and quantityLabel:IsA("TextLabel") then
-                            local quantityText = quantityLabel.Text
-                            local amount = extractQuantity(quantityText)
-                            
-                            if amount > 0 then
-                                local itemName = itemFrame.Name
-                                local success = sellItem(itemName, amount)
-                                if success then
-                                    itemsSold = itemsSold + 1
-                                    task.wait(0.2)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
+        local text = capacityLabel.Text
+        -- Parse "Stash Capacity: 66/138"
+        local current, max = text:match("(%d+)/(%d+)")
+        if current and max then
+            return tonumber(current), tonumber(max)
         end
-        
-        return itemsSold
-    end
+        return 0, 0
+    end)
     
-    local function getOffsetPosition(targetPos, playerPos)
-        local direction = (playerPos - targetPos).Unit
-        return targetPos + (direction * DISTANCE_OFFSET)
+    if success then
+        return result
+    else
+        return 0, 0
     end
+end
 
-    local function smoothMoveTo(position, speed)
-        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp or not position then return end
-        
-        local startPos = hrp.Position
-        local delta = position - startPos
-        local duration = delta.Magnitude / speed
-        local startTime = tick()
-        
-        while tick() - startTime < duration do
-            if not getgenv().AutoRock and not getgenv().AutoMob then break end
-            
-            local t = math.min((tick() - startTime) / duration, 1)
-            local nextPos = startPos + delta * t
-            hrp.Velocity = Vector3.zero
-            hrp.CFrame = CFrame.new(nextPos)
-            RunService.Heartbeat:Wait()
-        end
-        
-        hrp.Velocity = Vector3.zero
-        hrp.CFrame = CFrame.new(position)
-    end
+local function extractQuantity(quantityText)
+    if not quantityText then return 0 end
+    local num = quantityText:match("x(%d+)")
+    return tonumber(num) or 0
+end
 
-    -- ===== ROCK FARMING =====
-    local function isValidRock(rock)
-        if not rock or not rock:IsDescendantOf(Workspace) then return false end
-        
-        local children = rock:GetChildren()
-        if #children == 0 then return false end
-        
-        for _, child in ipairs(children) do
-            local health = child:GetAttribute("Health")
-            local maxHealth = child:GetAttribute("MaxHealth")
-            local lastHitPlayer = child:GetAttribute("LastHitPlayer")
-            
-            if health and maxHealth then
-                if health ~= maxHealth then return false end
-                
-                if lastHitPlayer and lastHitPlayer ~= Player.Name then
-                    return false
-                end
-                
-                return true
-            end
-        end
-        
+local function sellItem(itemName, amount)
+    if not itemName or not amount or amount <= 0 then
         return false
     end
+    
+    local args = {
+        "SellConfirm",
+        {
+            Basket = {
+                [itemName] = amount
+            }
+        }
+    }
+    
+    local success = pcall(function()
+        ReplicatedStorage
+            :WaitForChild("Shared")
+            :WaitForChild("Packages")
+            :WaitForChild("Knit")
+            :WaitForChild("Services")
+            :WaitForChild("DialogueService")
+            :WaitForChild("RF")
+            :WaitForChild("RunCommand")
+            :InvokeServer(unpack(args))
+    end)
+    
+    return success
+end
 
-    local function getRockHealth(rock)
-        if not rock or not rock:IsDescendantOf(Workspace) then return 0 end
-        
-        for _, child in ipairs(rock:GetChildren()) do
-            local health = child:GetAttribute("Health")
-            if health then return health end
-        end
-        
-        return 0
-    end
-
-    local function getRockLastHitPlayer(rock)
-        if not rock or not rock:IsDescendantOf(Workspace) then return nil end
-        
-        for _, child in ipairs(rock:GetChildren()) do
-            local lastHitPlayer = child:GetAttribute("LastHitPlayer")
-            if lastHitPlayer then return lastHitPlayer end
-        end
-        
-        return nil
-    end
-
-    local function getNearestRock()
-        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return nil end
-        
-        local nearest, dist = nil, math.huge
-        local priorityTarget = nil
-        local priorityDist = math.huge
-        
-        -- Kiểm tra nếu có priority target
-        local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
-        
-        for _, folder in pairs(Rocks:GetChildren()) do
-            if folder:IsA("Folder") then
-                for _, rock in pairs(folder:GetChildren()) do
-                    if isValidRock(rock) then
-                        local pos = rock:GetPivot().Position
-                        local d = (hrp.Position - pos).Magnitude
+local function sellAllItems()
+    local stashBackground = Player.PlayerGui:WaitForChild("Menu")
+        :WaitForChild("Frame")
+        :WaitForChild("Frame")
+        :WaitForChild("Menus")
+        :WaitForChild("Stash")
+        :WaitForChild("Background")
+    
+    local itemsSold = 0
+    
+    for _, itemFrame in pairs(stashBackground:GetChildren()) do
+        if itemFrame:IsA("Frame") or itemFrame:IsA("GuiObject") then
+            local mainFrame = itemFrame:FindFirstChild("Main")
+            if mainFrame then
+                local hasFavorite = mainFrame:FindFirstChild("Favorite")
+                
+                if not hasFavorite then
+                    local quantityLabel = mainFrame:FindFirstChild("Quantity")
+                    if quantityLabel and quantityLabel:IsA("TextLabel") then
+                        local quantityText = quantityLabel.Text
+                        local amount = extractQuantity(quantityText)
                         
-                        -- Kiểm tra priority
-                        if hasPriority then
-                            local rockName = folder.Name
-                            if rockName:lower():find(getgenv().PriorityTarget:lower(), 1, true) then
-                                if d < priorityDist then
-                                    priorityDist = d
-                                    priorityTarget = rock
-                                end
+                        if amount > 0 then
+                            local itemName = itemFrame.Name
+                            local success = sellItem(itemName, amount)
+                            if success then
+                                itemsSold = itemsSold + 1
+                                task.wait(0.2)
                             end
-                        end
-                        
-                        -- Tìm nearest thông thường
-                        if d < dist then
-                            dist = d
-                            nearest = rock
                         end
                     end
                 end
             end
         end
-        
-        -- Trả về priority nếu tìm thấy, không thì trả về nearest
-        return priorityTarget or nearest
     end
+    
+    return itemsSold
+end
 
-    local function startRockFarming()
-        if RockThread then return end
+local function getOffsetPosition(targetPos, playerPos)
+    local direction = (playerPos - targetPos).Unit
+    return targetPos + (direction * DISTANCE_OFFSET)
+end
+
+local function smoothMoveTo(position, speed)
+    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not position then return end
+    
+    local startPos = hrp.Position
+    local delta = position - startPos
+    local duration = delta.Magnitude / speed
+    local startTime = tick()
+    
+    while tick() - startTime < duration do
+        if not getgenv().AutoRock and not getgenv().AutoMob and not getgenv().AutoGreedyCey then break end
         
-        RockThread = task.spawn(function()
-            while getgenv().AutoRock do
-                pcall(function()
-                    -- Luôn tìm lại target để ưu tiên đúng
-                    CurrentRockTarget = getNearestRock()
-                    
-                    if CurrentRockTarget then
-                        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            local targetPos = CurrentRockTarget:GetPivot().Position
-                            local offsetPos = getOffsetPosition(targetPos, hrp.Position)
-                            
-                            smoothMoveTo(offsetPos, getgenv().TP_SPEED)
-                            
-                            while getgenv().AutoRock and CurrentRockTarget do
-                                local health = getRockHealth(CurrentRockTarget)
-                                if health <= 0 then
-                                    CurrentRockTarget = nil
-                                    break
-                                end
-                                
-                                local lastHit = getRockLastHitPlayer(CurrentRockTarget)
-                                if lastHit and lastHit ~= Player.Name then
-                                    CurrentRockTarget = nil
-                                    break
-                                end
-                                
-                                if not CurrentRockTarget:IsDescendantOf(Workspace) then
-                                    CurrentRockTarget = nil
-                                    break
-                                end
-                                
-                                task.wait(0.5)
-                            end
-                        end
-                    else
-                        task.wait(0.5)
-                    end
-                end)
-                task.wait(0.1)
+        local t = math.min((tick() - startTime) / duration, 1)
+        local nextPos = startPos + delta * t
+        hrp.Velocity = Vector3.zero
+        hrp.CFrame = CFrame.new(nextPos)
+        RunService.Heartbeat:Wait()
+    end
+    
+    hrp.Velocity = Vector3.zero
+    hrp.CFrame = CFrame.new(position)
+end
+
+-- ===== ROCK FARMING =====
+local function isValidRock(rock)
+    if not rock or not rock:IsDescendantOf(Workspace) then return false end
+    
+    local children = rock:GetChildren()
+    if #children == 0 then return false end
+    
+    for _, child in ipairs(children) do
+        local health = child:GetAttribute("Health")
+        local maxHealth = child:GetAttribute("MaxHealth")
+        local lastHitPlayer = child:GetAttribute("LastHitPlayer")
+        
+        if health and maxHealth then
+            if health ~= maxHealth then return false end
+            
+            if lastHitPlayer and lastHitPlayer ~= Player.Name then
+                return false
             end
-            RockThread = nil
-            CurrentRockTarget = nil
-        end)
-    end
-
-    local function stopRockFarming()
-        getgenv().AutoRock = false
-        if RockThread then
-            task.cancel(RockThread)
-            RockThread = nil
-        end
-        CurrentRockTarget = nil
-    end
-
-    -- ===== MOB FARMING =====
-    local MobNames = {}
-    
-    local function loadMobNames()
-        local assets = ReplicatedStorage:FindFirstChild("Assets")
-        if not assets then return end
-        
-        local mobsFolder = assets:FindFirstChild("Mobs")
-        if not mobsFolder then return end
-        
-        for _, mob in pairs(mobsFolder:GetChildren()) do
-            MobNames[mob.Name] = true
+            
+            return true
         end
     end
     
-    loadMobNames()
+    return false
+end
+
+local function getRockHealth(rock)
+    if not rock or not rock:IsDescendantOf(Workspace) then return 0 end
     
-    local function isValidMob(mob)
-        if not mob or not mob:IsDescendantOf(Workspace) then return false end
-        
-        local baseName = mob.Name:match("^(.-)%d*$")
-        
-        if not MobNames[baseName] and not MobNames[mob.Name] then
-            return false
-        end
-        
-        local humanoid = mob:FindFirstChild("Humanoid")
-        if not humanoid then return false end
-        
-        return humanoid.Health > 0
+    for _, child in ipairs(rock:GetChildren()) do
+        local health = child:GetAttribute("Health")
+        if health then return health end
     end
+    
+    return 0
+end
 
-    local function getMobHealth(mob)
-        if not mob or not mob:IsDescendantOf(Workspace) then return 0 end
-        
-        local humanoid = mob:FindFirstChild("Humanoid")
-        if humanoid then
-            return humanoid.Health
-        end
-        
-        return 0
+local function getRockLastHitPlayer(rock)
+    if not rock or not rock:IsDescendantOf(Workspace) then return nil end
+    
+    for _, child in ipairs(rock:GetChildren()) do
+        local lastHitPlayer = child:GetAttribute("LastHitPlayer")
+        if lastHitPlayer then return lastHitPlayer end
     end
+    
+    return nil
+end
 
-    local function getNearestMob()
-        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return nil end
-        
-        local nearest, dist = nil, math.huge
-        local priorityTarget = nil
-        local priorityDist = math.huge
-        
-        -- Kiểm tra nếu có priority target
-        local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
-        
-        for _, mob in pairs(Living:GetChildren()) do
-            if isValidMob(mob) then
-                local mobHrp = mob:FindFirstChild("HumanoidRootPart")
-                if mobHrp then
-                    local pos = mobHrp.Position
+local function getNearestRock()
+    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    
+    local nearest, dist = nil, math.huge
+    local priorityTarget = nil
+    local priorityDist = math.huge
+    
+    -- Kiểm tra nếu có priority target
+    local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
+    
+    for _, folder in pairs(Rocks:GetChildren()) do
+        if folder:IsA("Folder") then
+            for _, rock in pairs(folder:GetChildren()) do
+                if isValidRock(rock) then
+                    local pos = rock:GetPivot().Position
                     local d = (hrp.Position - pos).Magnitude
                     
-                    -- Kiểm tra priority
+                    -- Kiểm tra priority - so khớp chính xác phần tên (bỏ qua số ở cuối)
                     if hasPriority then
-                        local mobName = mob.Name
-                        if mobName:lower():find(getgenv().PriorityTarget:lower(), 1, true) then
+                        local rockName = folder.Name
+                        local baseName = rockName:match("^(.-)%d*$") -- Lấy phần tên không có số
+                        local priorityLower = getgenv().PriorityTarget:lower()
+                        
+                        -- Kiểm tra khớp chính xác hoặc bắt đầu bằng priority
+                        if baseName:lower() == priorityLower or rockName:lower():match("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")) then
                             if d < priorityDist then
                                 priorityDist = d
-                                priorityTarget = mob
+                                priorityTarget = rock
                             end
                         end
                     end
@@ -419,287 +280,508 @@ getgenv().AutoRock = false
                     -- Tìm nearest thông thường
                     if d < dist then
                         dist = d
-                        nearest = mob
+                        nearest = rock
                     end
                 end
             end
         end
-        
-        -- Trả về priority nếu tìm thấy, không thì trả về nearest
-        return priorityTarget or nearest
     end
+    
+    -- Trả về priority nếu tìm thấy, không thì trả về nearest
+    return priorityTarget or nearest
+end
 
-    local function startMobFarming()
-        if MobThread then return end
-        
-        MobThread = task.spawn(function()
-            while getgenv().AutoMob do
-                pcall(function()
-                    -- Luôn tìm lại target để ưu tiên đúng
-                    CurrentMobTarget = getNearestMob()
-                    
-                    if CurrentMobTarget then
-                        local mobHrp = CurrentMobTarget:FindFirstChild("HumanoidRootPart")
-                        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                        
-                        if mobHrp and hrp then
-                            -- Liên tục tween theo mob
-                            while getgenv().AutoMob and CurrentMobTarget do
-                                -- Kiểm tra health
-                                local health = getMobHealth(CurrentMobTarget)
-                                if health <= 0 then
-                                    CurrentMobTarget = nil
-                                    break
-                                end
-                                
-                                -- Kiểm tra mob còn tồn tại
-                                if not CurrentMobTarget:IsDescendantOf(Workspace) then
-                                    CurrentMobTarget = nil
-                                    break
-                                end
-                                
-                                -- Cập nhật mobHrp
-                                mobHrp = CurrentMobTarget:FindFirstChild("HumanoidRootPart")
-                                hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                                if not mobHrp or not hrp then
-                                    CurrentMobTarget = nil
-                                    break
-                                end
-                                
-                                -- Tính toán vị trí theo hướng nhìn của nhân vật
-                                local targetPos = mobHrp.Position
-                                local lookVector = hrp.CFrame.LookVector
-                                local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
-                                
-                                -- Tween tới vị trí mới
-                                smoothMoveTo(desiredPos, getgenv().TP_SPEED)
-                                
-                                task.wait(0.1)
+local function startRockFarming()
+    if RockThread then return end
+    
+    RockThread = task.spawn(function()
+        while getgenv().AutoRock do
+            pcall(function()
+                -- Luôn tìm lại target để ưu tiên đúng
+                CurrentRockTarget = getNearestRock()
+                
+                if CurrentRockTarget then
+                    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        -- Liên tục cập nhật vị trí theo rock
+                        while getgenv().AutoRock and CurrentRockTarget do
+                            -- Kiểm tra health
+                            local health = getRockHealth(CurrentRockTarget)
+                            if health <= 0 then
+                                CurrentRockTarget = nil
+                                break
                             end
-                        else
-                            CurrentMobTarget = nil
+                            
+                            -- Kiểm tra last hit player
+                            local lastHit = getRockLastHitPlayer(CurrentRockTarget)
+                            if lastHit and lastHit ~= Player.Name then
+                                CurrentRockTarget = nil
+                                break
+                            end
+                            
+                            -- Kiểm tra rock còn tồn tại
+                            if not CurrentRockTarget:IsDescendantOf(Workspace) then
+                                CurrentRockTarget = nil
+                                break
+                            end
+                            
+                            -- Cập nhật hrp
+                            hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                            if not hrp then
+                                CurrentRockTarget = nil
+                                break
+                            end
+                            
+                            -- Tính toán vị trí mới với offset và height
+                            local targetPos = CurrentRockTarget:GetPivot().Position
+                            local lookVector = hrp.CFrame.LookVector
+                            local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
+                            -- Thêm độ cao
+                            desiredPos = desiredPos + Vector3.new(0, HEIGHT_OFFSET, 0)
+                            
+                            -- Tween tới vị trí mới
+                            smoothMoveTo(desiredPos, getgenv().TP_SPEED)
+                            
+                            task.wait(0.1)
+                        end
+                    end
+                else
+                    task.wait(0.5)
+                end
+            end)
+            task.wait(0.1)
+        end
+        RockThread = nil
+        CurrentRockTarget = nil
+    end)
+end
+
+local function stopRockFarming()
+    getgenv().AutoRock = false
+    if RockThread then
+        task.cancel(RockThread)
+        RockThread = nil
+    end
+    CurrentRockTarget = nil
+end
+
+-- ===== MOB FARMING =====
+local MobNames = {}
+
+local function loadMobNames()
+    local assets = ReplicatedStorage:FindFirstChild("Assets")
+    if not assets then return end
+    
+    local mobsFolder = assets:FindFirstChild("Mobs")
+    if not mobsFolder then return end
+    
+    for _, mob in pairs(mobsFolder:GetChildren()) do
+        MobNames[mob.Name] = true
+    end
+end
+
+loadMobNames()
+
+local function isValidMob(mob)
+    if not mob or not mob:IsDescendantOf(Workspace) then return false end
+    
+    local baseName = mob.Name:match("^(.-)%d*$")
+    
+    if not MobNames[baseName] and not MobNames[mob.Name] then
+        return false
+    end
+    
+    local humanoid = mob:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    
+    return humanoid.Health > 0
+end
+
+local function getMobHealth(mob)
+    if not mob or not mob:IsDescendantOf(Workspace) then return 0 end
+    
+    local humanoid = mob:FindFirstChild("Humanoid")
+    if humanoid then
+        return humanoid.Health
+    end
+    
+    return 0
+end
+
+local function getNearestMob()
+    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    
+    local nearest, dist = nil, math.huge
+    local priorityTarget = nil
+    local priorityDist = math.huge
+    
+    -- Kiểm tra nếu có priority target
+    local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
+    
+    for _, mob in pairs(Living:GetChildren()) do
+        if isValidMob(mob) then
+            local mobHrp = mob:FindFirstChild("HumanoidRootPart")
+            if mobHrp then
+                local pos = mobHrp.Position
+                local d = (hrp.Position - pos).Magnitude
+                
+                -- Kiểm tra priority - so khớp chính xác phần tên (bỏ qua số ở cuối)
+                if hasPriority then
+                    local mobName = mob.Name
+                    local baseName = mobName:match("^(.-)%d*$") -- Lấy phần tên không có số
+                    local priorityLower = getgenv().PriorityTarget:lower()
+                    
+                    -- Kiểm tra khớp chính xác hoặc bắt đầu bằng priority
+                    if baseName:lower() == priorityLower or mobName:lower():match("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")) then
+                        if d < priorityDist then
+                            priorityDist = d
+                            priorityTarget = mob
+                        end
+                    end
+                end
+                
+                -- Tìm nearest thông thường
+                if d < dist then
+                    dist = d
+                    nearest = mob
+                end
+            end
+        end
+    end
+    
+    -- Trả về priority nếu tìm thấy, không thì trả về nearest
+    return priorityTarget or nearest
+end
+
+local function startMobFarming()
+    if MobThread then return end
+    
+    MobThread = task.spawn(function()
+        while getgenv().AutoMob do
+            pcall(function()
+                -- Luôn tìm lại target để ưu tiên đúng
+                CurrentMobTarget = getNearestMob()
+                
+                if CurrentMobTarget then
+                    local mobHrp = CurrentMobTarget:FindFirstChild("HumanoidRootPart")
+                    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                    
+                    if mobHrp and hrp then
+                        -- Liên tục tween theo mob
+                        while getgenv().AutoMob and CurrentMobTarget do
+                            -- Kiểm tra health
+                            local health = getMobHealth(CurrentMobTarget)
+                            if health <= 0 then
+                                CurrentMobTarget = nil
+                                break
+                            end
+                            
+                            -- Kiểm tra mob còn tồn tại
+                            if not CurrentMobTarget:IsDescendantOf(Workspace) then
+                                CurrentMobTarget = nil
+                                break
+                            end
+                            
+                            -- Cập nhật mobHrp
+                            mobHrp = CurrentMobTarget:FindFirstChild("HumanoidRootPart")
+                            hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                            if not mobHrp or not hrp then
+                                CurrentMobTarget = nil
+                                break
+                            end
+                            
+                            -- Tính toán vị trí theo hướng nhìn của nhân vật
+                            local targetPos = mobHrp.Position
+                            local lookVector = hrp.CFrame.LookVector
+                            local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
+                            
+                            -- Tween tới vị trí mới
+                            smoothMoveTo(desiredPos, getgenv().TP_SPEED)
+                            
+                            task.wait(0.1)
                         end
                     else
-                        task.wait(0.5)
+                        CurrentMobTarget = nil
                     end
-                end)
-                task.wait(0.1)
-            end
-            MobThread = nil
-            CurrentMobTarget = nil
-        end)
-    end
-
-    local function stopMobFarming()
-        getgenv().AutoMob = false
-        if MobThread then
-            task.cancel(MobThread)
-            MobThread = nil
+                else
+                    task.wait(0.5)
+                end
+            end)
+            task.wait(0.1)
         end
+        MobThread = nil
         CurrentMobTarget = nil
-    end
+    end)
+end
 
-    -- ===== GREEDY CEY FARMING =====
-    local VirtualInputManager = game:GetService("VirtualInputManager")
-    
-    local function clickAtPosition(x, y)
-        -- Nhấn chuột trái
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        task.wait(0.1)
-        -- Thả chuột trái
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+local function stopMobFarming()
+    getgenv().AutoMob = false
+    if MobThread then
+        task.cancel(MobThread)
+        MobThread = nil
     end
-    
-    local function startGreedyCeyFarming()
-        if GreedyCeyThread then return end
-        
-        GreedyCeyThread = task.spawn(function()
-            while getgenv().AutoGreedyCey do
-                pcall(function()
-                    local greedyCey = Proximity:FindFirstChild("Greedy Cey")
-                    if not greedyCey then
-                        task.wait(1)
-                        return
-                    end
-                    
-                    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                    if not hrp then
-                        task.wait(0.5)
-                        return
-                    end
-                    
-                    -- Tween tới Greedy Cey
-                    local targetPos = greedyCey:GetPivot().Position
-                    smoothMoveTo(targetPos, getgenv().TP_SPEED)
-                    
-                    task.wait(0.3)
-                    
-                    -- Fire ProximityPrompt
-                    local proximityPrompt = greedyCey:FindFirstChild("ProximityPrompt")
-                    if proximityPrompt then
-                        fireproximityprompt(proximityPrompt)
-                    end
-                    
-                    task.wait(0.5)
-                    
-                    -- Click 4 lần tại vị trí 1150, 600
-                    for i = 1, 4 do
-                        if not getgenv().AutoGreedyCey then break end
-                        clickAtPosition(1150, 600)
-                        task.wait(0.2)
-                    end
-                    
-                    task.wait(0.5)
-                end)
-                task.wait(0.1)
-            end
-            GreedyCeyThread = nil
-        end)
-    end
-    
-    local function stopGreedyCeyFarming()
-        getgenv().AutoGreedyCey = false
-        if GreedyCeyThread then
-            task.cancel(GreedyCeyThread)
-            GreedyCeyThread = nil
-        end
-    end
+    CurrentMobTarget = nil
+end
 
-    -- ===== STASH MONITOR =====
-    local function startStashMonitor()
-        if StashMonitorThread then return end
-        
-        StashMonitorThread = task.spawn(function()
-            while getgenv().AutoSellWhenFull do
-                task.wait(10) 
+-- ===== GREEDY CEY FARMING =====
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local function clickAtPosition(x, y)
+    -- Nhấn chuột trái
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    task.wait(0.1)
+    -- Thả chuột trái
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+end
+
+local function startGreedyCeyFarming()
+    if GreedyCeyThread then return end
+    
+    GreedyCeyThread = task.spawn(function()
+        while getgenv().AutoGreedyCey do
+            pcall(function()
+                local greedyCey = Proximity:FindFirstChild("Greedy Cey")
+                if not greedyCey then
+                    task.wait(1)
+                    return
+                end
                 
-                pcall(function()
-                    if not getgenv().AutoRock and not getgenv().AutoMob then
-                        return
+                local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                if not hrp then
+                    task.wait(0.5)
+                    return
+                end
+                
+                -- Tween tới Greedy Cey
+                local targetPos = greedyCey:GetPivot().Position
+                smoothMoveTo(targetPos, getgenv().TP_SPEED)
+                
+                task.wait(0.3)
+                
+                -- Fire ProximityPrompt
+                local proximityPrompt = greedyCey:FindFirstChild("ProximityPrompt")
+                if proximityPrompt then
+                    fireproximityprompt(proximityPrompt)
+                end
+                
+                task.wait(0.5)
+                
+                -- Click 4 lần tại vị trí 1150, 600
+                for i = 1, 4 do
+                    if not getgenv().AutoGreedyCey then break end
+                    clickAtPosition(1150, 600)
+                    task.wait(0.2)
+                end
+                
+                task.wait(0.5)
+            end)
+            task.wait(0.1)
+        end
+        GreedyCeyThread = nil
+    end)
+end
+
+local function stopGreedyCeyFarming()
+    getgenv().AutoGreedyCey = false
+    if GreedyCeyThread then
+        task.cancel(GreedyCeyThread)
+        GreedyCeyThread = nil
+    end
+end
+
+-- ===== STASH MONITOR =====
+local function startStashMonitor()
+    if StashMonitorThread then return end
+    
+    StashMonitorThread = task.spawn(function()
+        while getgenv().AutoSellWhenFull do
+            task.wait(10) 
+            
+            pcall(function()
+                if not getgenv().AutoRock and not getgenv().AutoMob then
+                    return
+                end
+                
+                local current, max = getStashCapacity()
+                
+                -- Kiểm tra nếu stash đầy hoàn toàn (current == max)
+                if max > 0 and current == max then
+                    print("=== Stash đầy hoàn toàn:", current .. "/" .. max, "===")
+                    
+                    -- Lưu trạng thái farming hiện tại
+                    local wasRockFarming = getgenv().AutoRock
+                    local wasMobFarming = getgenv().AutoMob
+                    
+                    -- Tạm dừng farming
+                    if wasRockFarming then
+                        getgenv().AutoRock = false
+                        task.wait(0.5)
+                    end
+                    if wasMobFarming then
+                        getgenv().AutoMob = false
+                        task.wait(0.5)
                     end
                     
-                    local current, max = getStashCapacity()
+                    -- Bật AutoGreedyCey để tween đến Greedy Cey
+                    local greedyCey = Proximity:FindFirstChild("Greedy Cey")
+                    if greedyCey then
+                        getgenv().AutoGreedyCey = true
+                        startGreedyCeyFarming()
+                        
+                        -- Đợi nhân vật đến nơi
+                        task.wait(5)
+                        
+                        -- Tắt AutoGreedyCey
+                        stopGreedyCeyFarming()
+                        
+                        -- Thực hiện bán
+                        local beforeCurrent, beforeMax = getStashCapacity()
+                        local itemsSold = sellAllItems()
+                        task.wait(1)
+                        
+                        local afterCurrent, afterMax = getStashCapacity()
+                        
+                        print("Trước bán:", beforeCurrent .. "/" .. beforeMax)
+                        print("Sau bán:", afterCurrent .. "/" .. afterMax)
+                        print("Số items đã bán:", itemsSold)
+                        
+                        -- Kiểm tra nếu không bán được gì (toàn favorite)
+                        if beforeCurrent == afterCurrent and itemsSold == 0 then
+                            print("!!! Tất cả items đều là Favorite, tắt auto sell !!!")
+                            getgenv().AutoSellWhenFull = false
+                        end
+                    end
                     
-                    if max > 0 and current / max >= STASH_FULL_THRESHOLD then
-                        print("=== Stash gần đầy:", current .. "/" .. max, "===")
-                        
-                        -- Lưu trạng thái farming hiện tại
-                        local wasRockFarming = getgenv().AutoRock
-                        local wasMobFarming = getgenv().AutoMob
-                        
-                        -- Tạm dừng farming
-                        if wasRockFarming then
-                            getgenv().AutoRock = false
-                            task.wait(0.5)
-                        end
-                        if wasMobFarming then
-                            getgenv().AutoMob = false
-                            task.wait(0.5)
-                        end
-                        
-
-                        local greedyCey = Proximity:FindFirstChild("Greedy Cey")
-                        if greedyCey then
-                            local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                            if hrp then
-
-                                local targetPos = greedyCey:GetPivot().Position
-                                smoothMoveTo(targetPos, getgenv().TP_SPEED)
-                                task.wait(5)
-                                
-
-                                local beforeCurrent, beforeMax = getStashCapacity()
-                                local itemsSold = sellAllItems()
-                                task.wait(1)
-                                
-                                local afterCurrent, afterMax = getStashCapacity()
-                                
-                                print("Trước bán:", beforeCurrent .. "/" .. beforeMax)
-                                print("Sau bán:", afterCurrent .. "/" .. afterMax)
-                                print("Số items đã bán:", itemsSold)
-                                
-                                -- Kiểm tra nếu không bán được gì (toàn favorite)
-                                if beforeCurrent == afterCurrent and itemsSold == 0 then
-                                    print("!!! Tất cả items đều là Favorite, tắt auto sell !!!")
-                                    getgenv().AutoSellWhenFull = false
-                                end
+                    -- Tiếp tục farming
+                    if wasRockFarming then
+                        getgenv().AutoRock = true
+                        startRockFarming()
+                    end
+                    if wasMobFarming then
+                        getgenv().AutoMob = true
+                        startMobFarming()
+                    end
+                -- Kiểm tra nếu stash gần đầy (theo threshold)
+                elseif max > 0 and current / max >= STASH_FULL_THRESHOLD then
+                    print("=== Stash gần đầy:", current .. "/" .. max, "===")
+                    
+                    -- Lưu trạng thái farming hiện tại
+                    local wasRockFarming = getgenv().AutoRock
+                    local wasMobFarming = getgenv().AutoMob
+                    
+                    -- Tạm dừng farming
+                    if wasRockFarming then
+                        getgenv().AutoRock = false
+                        task.wait(0.5)
+                    end
+                    if wasMobFarming then
+                        getgenv().AutoMob = false
+                        task.wait(0.5)
+                    end
+                    
+                    -- Tween đến GreedyCey để bán
+                    local greedyCey = Proximity:FindFirstChild("Greedy Cey")
+                    if greedyCey then
+                        local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            local targetPos = greedyCey:GetPivot().Position
+                            smoothMoveTo(targetPos, getgenv().TP_SPEED)
+                            task.wait(5)
+                            
+                            local beforeCurrent, beforeMax = getStashCapacity()
+                            local itemsSold = sellAllItems()
+                            task.wait(1)
+                            
+                            local afterCurrent, afterMax = getStashCapacity()
+                            
+                            print("Trước bán:", beforeCurrent .. "/" .. beforeMax)
+                            print("Sau bán:", afterCurrent .. "/" .. afterMax)
+                            print("Số items đã bán:", itemsSold)
+                            
+                            -- Kiểm tra nếu không bán được gì (toàn favorite)
+                            if beforeCurrent == afterCurrent and itemsSold == 0 then
+                                print("!!! Tất cả items đều là Favorite, tắt auto sell !!!")
+                                getgenv().AutoSellWhenFull = false
                             end
                         end
-
-                        if wasRockFarming then
-                            getgenv().AutoRock = true
-                            startRockFarming()
-                        end
-                        if wasMobFarming then
-                            getgenv().AutoMob = true
-                            startMobFarming()
-                        end
                     end
-                end)
-            end
-            StashMonitorThread = nil
-        end)
-    end
-    
-    local function stopStashMonitor()
-        getgenv().AutoSellWhenFull = false
-        if StashMonitorThread then
-            task.cancel(StashMonitorThread)
-            StashMonitorThread = nil
+                    
+                    -- Tiếp tục farming
+                    if wasRockFarming then
+                        getgenv().AutoRock = true
+                        startRockFarming()
+                    end
+                    if wasMobFarming then
+                        getgenv().AutoMob = true
+                        startMobFarming()
+                    end
+                end
+            end)
         end
-    end
+        StashMonitorThread = nil
+    end)
+end
 
-    -- ===== TOGGLES =====
-    AutoFarm:AddTextbox({
-        Name = "Ưu tiên Target (VD: Zombie hoặc Iron)",
-        Default = "",
-        TextDisappear = false,
-        Callback = function(v)
-            getgenv().PriorityTarget = v
+local function stopStashMonitor()
+    getgenv().AutoSellWhenFull = false
+    if StashMonitorThread then
+        task.cancel(StashMonitorThread)
+        StashMonitorThread = nil
+    end
+end
+
+-- ===== TOGGLES =====
+AutoFarm:AddTextbox({
+    Name = "Ưu tiên Target (VD: Zombie hoặc Iron)",
+    Default = "",
+    TextDisappear = false,
+    Callback = function(v)
+        getgenv().PriorityTarget = v
+    end
+})
+
+AutoFarm:AddToggle({
+    Name = "Auto Farm Rocks",
+    Flag = "AutoRockToggle",
+    Keybind = false,
+    Callback = function(enabled)
+        getgenv().AutoRock = enabled
+        if enabled then
+            startRockFarming()
+        else
+            stopRockFarming()
         end
-    })
-    
-    AutoFarm:AddToggle({
-        Name = "Auto Farm Rocks",
-        Flag = "AutoRockToggle",
-        Keybind = false,
-        Callback = function(enabled)
-            getgenv().AutoRock = enabled
-            if enabled then
-                startRockFarming()
-            else
-                stopRockFarming()
-            end
+    end
+})
+
+AutoFarm:AddToggle({
+    Name = "Auto Farm Mobs",
+    Flag = "AutoMobToggle",
+    Keybind = false,
+    Callback = function(enabled)
+        getgenv().AutoMob = enabled
+        if enabled then
+            startMobFarming()
+        else
+            stopMobFarming()
         end
-    })
-    
-    AutoFarm:AddToggle({
-        Name = "Auto Farm Mobs",
-        Flag = "AutoMobToggle",
-        Keybind = false,
-        Callback = function(enabled)
-            getgenv().AutoMob = enabled
-            if enabled then
-                startMobFarming()
-            else
-                stopMobFarming()
-            end
+    end
+})
+
+AutoFarm:AddToggle({
+    Name = "Auto Greedy Cey",
+    Flag = "AutoGreedyCeyToggle",
+    Keybind = false,
+    Callback = function(enabled)
+        getgenv().AutoGreedyCey = enabled
+        if enabled then
+            startGreedyCeyFarming()
+        else
+            stopGreedyCeyFarming()
         end
-    })
-    
-    AutoFarm:AddToggle({
-        Name = "Auto Greedy Cey",
-        Flag = "AutoGreedyCeyToggle",
-        Keybind = false,
-        Callback = function(enabled)
-            getgenv().AutoGreedyCey = enabled
-            if enabled then
-                startGreedyCeyFarming()
-            else
-                stopGreedyCeyFarming()
-            end
-        end
-    })
+    end
+})
 
 
 local UserInputService = game:GetService("UserInputService")
