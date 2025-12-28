@@ -438,7 +438,7 @@ Farm:AddButton({
 getgenv().AutoRock = false
 getgenv().AutoMob = false
 getgenv().AutoSellWhenFull = true
-getgenv().TP_SPEED = 80
+getgenv().TP_SPEED = 50
 getgenv().PriorityTarget = ""
 
 local DISTANCE_OFFSET = 3
