@@ -42,8 +42,8 @@ getgenv().AutoRock = false
     getgenv().AutoSellWhenFull = true
     getgenv().TP_SPEED = 150
     getgenv().PriorityTarget = ""
-    local DISTANCE_OFFSET = 2
-    local STASH_FULL_THRESHOLD = 0.9 -- 90% đầy sẽ bán
+    local DISTANCE_OFFSET = 5
+    local STASH_FULL_THRESHOLD = 0.9
     -- =========================
 
     local RunService = game:GetService("RunService")
