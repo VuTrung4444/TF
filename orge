@@ -753,7 +753,7 @@ local function startRockFarming()
                             local lookVector = hrp.CFrame.LookVector
                             local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
 							desiredPos = desiredPos + Vector3.new(0, 2, 0)
-							
+
                             smoothMoveTo(desiredPos, getgenv().TP_SPEED)
                             hasTweened = true
                             
@@ -1872,8 +1872,8 @@ local Character = plr.Character or plr.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
 
-local WalkSpeed = 40
-local JumpPower = 50
+local WalkSpeed = 50
+local JumpPower = 60
 
 
 local function updateHumanoid(char)
