@@ -818,7 +818,7 @@ local function runGreedyCeyOnce()
                 fireproximityprompt(proximityPrompt)
             end
             
-            task.wait(1)
+            task.wait(0.5)
             
             for i = 1, 5 do
                 clickAtPosition(1150, 600)
