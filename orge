@@ -439,7 +439,7 @@ getgenv().TP_SPEED = 50
 getgenv().PriorityTarget = ""
 
 local DISTANCE_OFFSET = 3
-local HEIGHT_OFFSET = 3
+local HEIGHT_OFFSET = -5.5
 local STASH_FULL_THRESHOLD = 0.9
 
 local Player = Players.LocalPlayer
@@ -607,7 +607,6 @@ local function getNearestRock()
         if priorityTarget then
             return priorityTarget
         end
-        print("Không tìm thấy rock:", getgenv().PriorityTarget)
     end
     
     for _, folder in pairs(Rocks:GetChildren()) do
@@ -833,7 +832,7 @@ local function startRockFarming()
                             local targetPos = CurrentRockTarget:GetPivot().Position
                             local lookVector = hrp.CFrame.LookVector
                             local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
-                            desiredPos = desiredPos + Vector3.new(0, HEIGHT_OFFSET, 0)
+                            desiredPos = desiredPos + Vector3.new(0, 2, 0)
                             
                             smoothMoveTo(desiredPos, getgenv().TP_SPEED)
                             
@@ -1012,7 +1011,8 @@ local function startMobFarming()
                             local targetPos = mobHrp.Position
                             local lookVector = hrp.CFrame.LookVector
                             local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
-                            
+                            desiredPos = desiredPos + Vector3.new(0, HEIGHT_OFFSET, 0)
+
                             smoothMoveTo(desiredPos, getgenv().TP_SPEED)
                             
                             task.wait(0.1)
