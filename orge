@@ -439,7 +439,7 @@ getgenv().TP_SPEED = 50
 getgenv().PriorityTarget = ""
 
 local DISTANCE_OFFSET = 3
-local HEIGHT_OFFSET = -5.5
+local HEIGHT_OFFSET = -5
 local STASH_FULL_THRESHOLD = 0.9
 
 local Player = Players.LocalPlayer
