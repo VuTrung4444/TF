@@ -831,8 +831,8 @@ local function startRockFarming()
                             
                             local targetPos = CurrentRockTarget:GetPivot().Position
                             local lookVector = hrp.CFrame.LookVector
-                            local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
-                            desiredPos = desiredPos + Vector3.new(0, -6, 0)
+                            local desiredPos = targetPos
+                            desiredPos = desiredPos + Vector3.new(0, -4.8, 0)
                             
                             smoothMoveTo(desiredPos, getgenv().TP_SPEED)
                             
