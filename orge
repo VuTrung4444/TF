@@ -433,14 +433,13 @@ Farm:AddButton({
         sellAllItems()
     end
 })
+
 getgenv().AutoRock = false
 getgenv().AutoMob = false
-getgenv().TP_SPEED = 50
+getgenv().TP_SPEED = 80
 getgenv().PriorityTarget = ""
 
-local DISTANCE_OFFSET = 2
-local HEIGHT_OFFSET = -5
-local STASH_FULL_THRESHOLD = 0.9
+local HEIGHT_OFFSET = -10
 
 local Player = Players.LocalPlayer
 local Rocks = Workspace:WaitForChild("Rocks")
@@ -451,57 +450,6 @@ local RockThread = nil
 local MobThread = nil
 local CurrentRockTarget = nil
 local CurrentMobTarget = nil
-local IsStashFull = false
-
--- ===== STASH CAPACITY =====
-local function getStashCapacity()
-    local success, result = pcall(function()
-        local capacityLabel = Player.PlayerGui:WaitForChild("Menu")
-            :WaitForChild("Frame")
-            :WaitForChild("Frame")
-            :WaitForChild("Menus")
-            :WaitForChild("Stash")
-            :WaitForChild("Capacity")
-        
-        local text = capacityLabel.Text
-        local current, max = text:match("(%d+)/(%d+)")
-        if current and max then
-            return tonumber(current), tonumber(max)
-        end
-        return 0, 0
-    end)
-    
-    if success then
-        return result
-    else
-        return 0, 0
-    end
-end
-
--- ===== MOVEMENT =====
-local function smoothMoveTo(position, speed)
-    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp or not position then return end
-    
-    local startPos = hrp.Position
-    local delta = position - startPos
-    local duration = delta.Magnitude / speed
-    local startTime = tick()
-    
-    while tick() - startTime < duration do
-        if not getgenv().AutoRock and not getgenv().AutoMob then break end
-        if IsStashFull then break end
-        
-        local t = math.min((tick() - startTime) / duration, 1)
-        local nextPos = startPos + delta * t
-        hrp.Velocity = Vector3.zero
-        hrp.CFrame = CFrame.new(nextPos)
-        RunService.Heartbeat:Wait()
-    end
-    
-    hrp.Velocity = Vector3.zero
-    hrp.CFrame = CFrame.new(position)
-end
 
 -- ===== ROCK FARMING =====
 local function isValidRock(rock)
@@ -572,66 +520,10 @@ local function getRockLastHitPlayer(rock)
     return nil
 end
 
-local function findRockByPath(rockName)
-    if not rockName or trim(rockName) == "" then return nil end
-    
-    local priorityLower = trim(rockName):lower()
-    
-    for _, folder in pairs(Rocks:GetChildren()) do
-        if folder:IsA("Folder") then
-            for _, descendant in pairs(folder:GetDescendants()) do
-                if descendant:IsA("Model") then
-                    local descendantNameLower = descendant.Name:lower()
-                    
-                    if descendantNameLower == priorityLower or 
-                       descendantNameLower:find("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1") .. "%d*$") then
-                        return descendant
-                    end
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
-local function getNearestRock()
-    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    
-    local nearest, dist = nil, math.huge
-    local hasPriority = getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= ""
-    
-    if hasPriority then
-        local priorityTarget = findRockByPath(getgenv().PriorityTarget)
-        if priorityTarget then
-            return priorityTarget
-        end
-    end
-    
-    for _, folder in pairs(Rocks:GetChildren()) do
-        if folder:IsA("Folder") then
-            for _, rock in pairs(folder:GetChildren()) do
-                if isValidRock(rock) then
-                    local pos = rock:GetPivot().Position
-                    local d = (hrp.Position - pos).Magnitude
-                    
-                    if d < dist then
-                        dist = d
-                        nearest = rock
-                    end
-                end
-            end
-        end
-    end
-    
-    return nearest
-end
-
--- ===== GREEDY CEY FARMING =====
+-- ===== GREEDY CEY =====
 local function clickAtPosition(x, y)
     VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-    task.wait(0.1)
+    task.wait(0.2)
     VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
 
@@ -648,10 +540,8 @@ local function runGreedyCeyOnce()
                 return
             end
             
-
             local targetPos = greedyCey:GetPivot().Position
             
-            -- Sử dụng TWEEN và ĐỢI HOÀN THÀNH
             local startPos = hrp.Position
             local delta = targetPos - startPos
             local duration = delta.Magnitude / getgenv().TP_SPEED
@@ -667,7 +557,7 @@ local function runGreedyCeyOnce()
             
             hrp.Velocity = Vector3.zero
             hrp.CFrame = CFrame.new(targetPos)
-
+            
             task.wait(0.5)
             
             local proximityPrompt = greedyCey:FindFirstChild("ProximityPrompt")
@@ -675,87 +565,39 @@ local function runGreedyCeyOnce()
                 fireproximityprompt(proximityPrompt)
             end
             
-            task.wait(1)
-
+            task.wait(2)
+            
             for i = 1, 4 do
                 clickAtPosition(1150, 600)
                 task.wait(0.2)
             end
-
         end)
     end)
 end
-
 
 local function startRockFarming()
     if RockThread then return end
     
     RockThread = task.spawn(function()
         while getgenv().AutoRock do
+            task.wait(0.01)
+            
             pcall(function()
-                -- Kiểm tra Capacity trước khi tìm mục tiêu mới
-                local current, max = getStashCapacity()
-                if max > 0 and current / max >= STASH_FULL_THRESHOLD then
-
-                    IsStashFull = true
-                    
-                    -- Tạm dừng farm
-                    CurrentRockTarget = nil
-                    task.wait(0.5)
-                    
-
-                    local greedyThread = runGreedyCeyOnce()
-                    
-                    -- Đợi Greedy Cey hoàn thành
-                    while coroutine.status(greedyThread) ~= "dead" do
-                        task.wait(0.5)
-                    end
-                    
-                    task.wait(2)
-
-                    local beforeCurrent, beforeMax = getStashCapacity()
-                    local itemsSold = sellAllItems()
-                    task.wait(1)
-                    
-                    local afterCurrent, afterMax = getStashCapacity()
-
-                    -- Kiểm tra nếu vẫn đầy thì tắt auto
-                    if afterMax > 0 and afterCurrent / afterMax >= STASH_FULL_THRESHOLD then
-
-                        getgenv().AutoRock = false
-                        IsStashFull = false
-                        RockThread = nil
-                        CurrentRockTarget = nil
-                        return
-                    end
-                    
-                    -- Reset trạng thái
-                    IsStashFull = false
-
-                    task.wait(0.5)
-                end
-                
                 -- Tìm mục tiêu mới chỉ khi chưa có target
                 if not CurrentRockTarget then
                     if getgenv().PriorityTarget and trim(getgenv().PriorityTarget) ~= "" then
-                        -- Tìm priority target - KIỂM TRA TÊN CHILDREN BÊN TRONG
                         local priorityLower = trim(getgenv().PriorityTarget):lower()
-
                         
                         for _, folder in pairs(Rocks:GetChildren()) do
                             if folder:IsA("Folder") then
                                 for _, rock in pairs(folder:GetChildren()) do
-                                    -- Kiểm tra children bên trong rock
                                     for _, child in pairs(rock:GetChildren()) do
                                         local childNameLower = child.Name:lower()
                                         
-                                        -- So sánh tên child với priority
                                         if childNameLower == priorityLower or 
                                            childNameLower:find("^" .. priorityLower:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")) then
-                                            -- Tìm thấy child khớp tên, kiểm tra rock valid
                                             if isValidRock(rock) then
                                                 CurrentRockTarget = rock
-
                                                 break
                                             end
                                         end
@@ -765,12 +607,7 @@ local function startRockFarming()
                                 if CurrentRockTarget then break end
                             end
                         end
-                        
-                        if not CurrentRockTarget then
-
-                        end
                     else
-
                         local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             local nearest, dist = nil, math.huge
@@ -790,66 +627,63 @@ local function startRockFarming()
                                 end
                             end
                             CurrentRockTarget = nearest
-                            if CurrentRockTarget then
-
-                            end
                         end
                     end
                 end
                 
-                -- Farm target hiện tại
+                -- Kiểm tra target còn hợp lệ không
+                if CurrentRockTarget then
+                    local health = getRockHealth(CurrentRockTarget)
+                    if health <= 0 then
+                        CurrentRockTarget = nil
+                        return
+                    end
+                    
+                    if not getgenv().PriorityTarget or trim(getgenv().PriorityTarget) == "" then
+                        local lastHit = getRockLastHitPlayer(CurrentRockTarget)
+                        if lastHit and lastHit ~= Player.Name then
+                            CurrentRockTarget = nil
+                            return
+                        end
+                    end
+                    
+                    if not CurrentRockTarget:IsDescendantOf(Workspace) then
+                        CurrentRockTarget = nil
+                        return
+                    end
+                end
+                
+                -- Di chuyển đến target
                 if CurrentRockTarget then
                     local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        while getgenv().AutoRock and CurrentRockTarget and not IsStashFull do
-
-                            local health = getRockHealth(CurrentRockTarget)
-                            if health <= 0 then
-                                CurrentRockTarget = nil
-                                break
-                            end
-                            
-                            -- Với normal target: kiểm tra LastHitPlayer
-                            if not getgenv().PriorityTarget or trim(getgenv().PriorityTarget) == "" then
-                                local lastHit = getRockLastHitPlayer(CurrentRockTarget)
-                                if lastHit and lastHit ~= Player.Name then
-                                    CurrentRockTarget = nil
-                                    break
-                                end
-                            end
-                            
-                            if not CurrentRockTarget:IsDescendantOf(Workspace) then
-                                CurrentRockTarget = nil
-                                break
-                            end
-                            
-                            hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                            if not hrp then
-                                CurrentRockTarget = nil
-                                break
-                            end
-                            
-                            local targetPos = CurrentRockTarget:GetPivot().Position
-                            local lookVector = hrp.CFrame.LookVector
-                            local desiredPos = targetPos
-                            desiredPos = desiredPos + Vector3.new(0, -4.8, 0)
-                            
-                            smoothMoveTo(desiredPos, getgenv().TP_SPEED)
-                            
-                            task.wait(0.5)
-                        end
+                    if not hrp then return end
+                    
+                    local targetPos = CurrentRockTarget:GetPivot().Position + Vector3.new(0, -7, 0)
+                    local currentPos = hrp.Position
+                    local delta = targetPos - currentPos
+                    local distance = delta.Magnitude
+                    
+                    if distance > 0.5 then
+                        local dt = task.wait()
+                        local moveStep = math.min(getgenv().TP_SPEED * dt, distance)
+                        local newPos = currentPos + (delta.Unit * moveStep)
+                        
+                        -- Xoay nhìn về rock
+                        local lookAtPos = CurrentRockTarget:GetPivot().Position
+                        hrp.CFrame = CFrame.new(newPos, lookAtPos)
                     else
-                        CurrentRockTarget = nil
+                        -- Đã đến vị trí, chỉ cần xoay
+                        hrp.CFrame = CFrame.new(targetPos, CurrentRockTarget:GetPivot().Position)
                     end
-                else
-                    task.wait(0.5)
+                    
+                    hrp.Velocity = Vector3.zero
+                    hrp.AssemblyLinearVelocity = Vector3.zero
                 end
             end)
-            task.wait(0.1)
         end
+        
         RockThread = nil
         CurrentRockTarget = nil
-        IsStashFull = false
     end)
 end
 
@@ -860,7 +694,6 @@ local function stopRockFarming()
         RockThread = nil
     end
     CurrentRockTarget = nil
-    IsStashFull = false
 end
 
 -- ===== MOB FARMING =====
@@ -980,52 +813,64 @@ local function startMobFarming()
     if MobThread then return end
     
     MobThread = task.spawn(function()
+
         while getgenv().AutoMob do
+            task.wait(0.01)
+            
             pcall(function()
-                CurrentMobTarget = getNearestMob()
+                -- Tìm target
+                if not CurrentMobTarget then
+                    CurrentMobTarget = getNearestMob()
+                end
                 
+                -- Kiểm tra target còn hợp lệ không
+                if CurrentMobTarget then
+                    local health = getMobHealth(CurrentMobTarget)
+                    if health <= 0 then
+                        CurrentMobTarget = nil
+                        return
+                    end
+                    
+                    if not CurrentMobTarget:IsDescendantOf(Workspace) then
+                        CurrentMobTarget = nil
+                        return
+                    end
+                end
+                
+
                 if CurrentMobTarget then
                     local mobHrp = CurrentMobTarget:FindFirstChild("HumanoidRootPart")
                     local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
                     
-                    if mobHrp and hrp then
-                        while getgenv().AutoMob and CurrentMobTarget do
-                            local health = getMobHealth(CurrentMobTarget)
-                            if health <= 0 then
-                                CurrentMobTarget = nil
-                                break
-                            end
-                            
-                            if not CurrentMobTarget:IsDescendantOf(Workspace) then
-                                CurrentMobTarget = nil
-                                break
-                            end
-                            
-                            mobHrp = CurrentMobTarget:FindFirstChild("HumanoidRootPart")
-                            hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                            if not mobHrp or not hrp then
-                                CurrentMobTarget = nil
-                                break
-                            end
-                            
-                            local targetPos = mobHrp.Position
-                            local lookVector = hrp.CFrame.LookVector
-                            local desiredPos = targetPos - (lookVector * DISTANCE_OFFSET)
-                            desiredPos = desiredPos + Vector3.new(0, HEIGHT_OFFSET, 0)
-
-                            smoothMoveTo(desiredPos, getgenv().TP_SPEED)
-                            
-                            task.wait(0.1)
-                        end
-                    else
+                    if not mobHrp or not hrp then
                         CurrentMobTarget = nil
+                        return
                     end
-                else
-                    task.wait(0.5)
+                    
+                    local targetPos = mobHrp.Position + Vector3.new(0, HEIGHT_OFFSET, 0)
+                    local currentPos = hrp.Position
+                    local delta = targetPos - currentPos
+                    local distance = delta.Magnitude
+                    
+                    if distance > 0.5 then
+                        local dt = task.wait()
+                        local moveStep = math.min(getgenv().TP_SPEED * dt, distance)
+                        local newPos = currentPos + (delta.Unit * moveStep)
+                        
+
+                        local lookAtPos = mobHrp.Position
+                        hrp.CFrame = CFrame.new(newPos, lookAtPos)
+                    else
+
+                        hrp.CFrame = CFrame.new(targetPos, mobHrp.Position)
+                    end
+                    
+                    hrp.Velocity = Vector3.zero
+                    hrp.AssemblyLinearVelocity = Vector3.zero
                 end
             end)
-            task.wait(0.1)
         end
+        
         MobThread = nil
         CurrentMobTarget = nil
     end)
@@ -1084,7 +929,6 @@ AutoFarm:AddButton({
         runGreedyCeyOnce()
     end
 })
-
 
 
 Forge:AddToggle({
